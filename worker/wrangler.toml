@@ -1,0 +1,8 @@
+name = "sj-chart"
+main = "chart-proxy.js"
+compatibility_date = "2026-09-01"
+workers_dev = true
+
+[vars]
+# 앱 주소(쉼표 구분). 포크했거나 다른 주소에서 쓰면 바꾸세요.
+ALLOWED_ORIGINS = "https://sharkyj.github.io,http://localhost:8000"
