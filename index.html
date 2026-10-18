@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-CNqRfr+tSs/GdqCi3M9kQOm1tIciAJpr6zpN+G9lIFY=' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; connect-src https://sheets.googleapis.com https://www.googleapis.com https://oauth2.googleapis.com https://accounts.google.com/gsi/; frame-src https://accounts.google.com/gsi/; img-src 'self' data:; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-GTNufa07FyAQc0eT229Si/x3wfRKDXbBjQmP2SRVUaw=' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; connect-src https://sheets.googleapis.com https://www.googleapis.com https://oauth2.googleapis.com https://accounts.google.com/gsi/; frame-src https://accounts.google.com/gsi/; img-src 'self' data:; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
 <meta name="robots" content="noindex,nofollow">
 <meta name="theme-color" content="#0b0f17">
@@ -218,8 +218,17 @@ const TAGS=['추세추종','눌림목','돌파','실적','뉴스/이벤트','장
 const EMOS=['확신','보통','불안','FOMO','공포','후회'];
 const LEV_US=new Set(['SOXL','TQQQ','UPRO','SPXL','TECL','FNGU','NVDL','NVDU','TSLL','METU','CONL','MSTU','SOXS','SQQQ','LABU','TNA','UDOW','QLD','SSO','USD','ROM','GGLL','AMZU','AAPU','MSFU','BITX','TSLT','NVDX','AVL','MUU','SNDU']);
 const PAL=['#6c8cff','#f5a524','#22c3a6','#e5568f','#9b7bff','#41b8e8','#f07c3c','#a3c94a'];
-const DEF={clientId:'',mainId:'',krId:'',usId:'',email:'',lockMin:3,feeKRbuy:0,feeKRsell:0,feeUS:0,autoSnap:true,theme:'auto',demo:false};
+const DEF={clientId:'',mainId:'',krId:'',usId:'',email:'',lockMin:3,fees:{},taxKRsell:0,autoSnap:true,theme:'auto',demo:false};
 
+/* 계좌별 매매 수수료 기본값 (설정에서 계좌별로 덮어씀). 키: 시장|계좌명에 포함된 증권사명
+   b/s: 매수/매도 수수료 %, sec: 미장 매도 SEC Fee %, min: SEC 최소금액($), until: 우대요율 종료일, after: 종료 후 수수료 % */
+const FEE_DEF={
+  'KR|토스':{b:0.015,s:0.015,sec:'',min:'',until:'',after:''},
+  'KR|메리츠':{b:0,s:0,sec:'',min:'',until:'2026-12-31',after:''},
+  'US|토스':{b:0.1,s:0.1,sec:0.00206,min:0.01,until:'',after:''},
+  'US|메리츠':{b:0,s:0,sec:'',min:'',until:'2026-12-31',after:0.07}
+};
+const FEE_F=['b','s','sec','min','until','after'];
 const $=(s,el=document)=>el.querySelector(s);
 const $$=(s,el=document)=>[...el.querySelectorAll(s)];
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -255,6 +264,23 @@ const saveCfg=()=>LS.set('sj.cfg',S.cfg);
 const configured=()=>S.cfg.demo||(S.cfg.clientId&&S.cfg.mainId&&S.cfg.krId&&S.cfg.usId);
 
 /* ================= 계산 엔진 (시트 수식과 동일) ================= */
+function feeRule(m,acc){
+  const saved=(S.cfg.fees||{})[m+'|'+acc];if(saved)return Object.assign({b:0,s:0,sec:'',min:'',until:'',after:''},saved);
+  const d=Object.entries(FEE_DEF).find(([k])=>{const [mm,br]=k.split('|');return mm===m&&String(acc).includes(br)});
+  return Object.assign({},d?d[1]:{b:0,s:0,sec:'',min:'',until:'',after:''});
+}
+// 수수료 계산: 국장은 원 단위 절사, 미장 수수료는 센트 반올림, SEC Fee는 센트 올림(최소금액 적용)
+function calcFee(m,acc,type,date,qty,price){
+  const r=feeRule(m,acc),amt=Math.abs(num(qty))*num(price),sell=type==='매도';
+  const expired=!!(r.until&&date&&date>toSerial(r.until));
+  let rate=num(sell?r.s:r.b);if(expired&&str(r.after)!=='')rate=num(r.after);
+  const parts=[];let fee=m==='KR'?Math.floor(amt*rate/100+1e-9):Math.round(amt*rate+1e-9)/100;
+  parts.push(`${acc||'계좌 미지정'} ${fmtNum(rate,4)}%${r.until?(expired?` (${r.until} 이후 요율)`:` (~${r.until})`):''}`);
+  if(sell&&m==='US'&&num(r.sec)>0&&amt>0){const sec=Math.max(num(r.min),Math.ceil(amt*num(r.sec)-1e-9)/100);fee+=sec;parts.push(`SEC ${fmtMoney(sec,'USD')}`)}
+  if(sell&&m==='KR'&&num(S.cfg.taxKRsell)>0&&amt>0){const t=Math.floor(amt*num(S.cfg.taxKRsell)/100+1e-9);fee+=t;parts.push(`거래세 ${fmtNum(S.cfg.taxKRsell,4)}%`)}
+  if(m==='US')fee=Math.round(fee*100)/100;
+  return {fee,desc:parts.join(' + ')};
+}
 function calcTrades(trades){
   let cum=0,avg=0;
   return trades.map(t=>{
@@ -969,13 +995,13 @@ function tAvg(){
 }
 function tSell(){
   const h=S.D.byKey[S.v.tk]||S.D.hold.find(x=>x.active);if(!h)return '<div class="empty">보유 종목이 없습니다</div>';
-  const rate=h.mkt==='KR'?S.cfg.feeKRsell:S.cfg.feeUS;
+  const held=Object.entries(h.accQty).filter(([,q])=>q>1e-9).sort((a,b)=>b[1]-a[1]).map(([a])=>a);const accs=[...new Set([...held,...S.D.acc[h.mkt]])];
   return `<section class="card" data-calc="sell"><h2>매도 시뮬레이션</h2>
    <label class="fld"><span>종목</span><select name="key" data-pick>${stockOpts(h.key)}</select></label>
    <div class="f2"><label class="fld"><span>보유수량</span><input name="q0" inputmode="decimal" value="${h.qty}"></label><label class="fld"><span>평균단가</span><input name="a0" inputmode="decimal" value="${+h.avg.toFixed(4)}"></label></div>
    <div class="f2"><label class="fld"><span>매도 수량</span><input name="n" inputmode="decimal" value="${h.qty}"></label><label class="fld"><span>매도 단가</span><input name="p" inputmode="decimal" value="${h.price}"></label></div>
-   <label class="fld"><span>수수료+세금 (%)</span><input name="rate" inputmode="decimal" value="${rate}"></label>
-   <input type="hidden" name="ccy" value="${h.ccy}"><div class="preview" id="calcOut"></div></section>`;
+   <label class="fld"><span>매도 계좌 (수수료 기준)</span><select name="acc">${accs.map(a=>`<option>${esc(a)}</option>`).join('')}</select><div class="hint">요율은 설정 → 매매 수수료에서 계좌별로 변경</div></label>
+   <input type="hidden" name="ccy" value="${h.ccy}"><input type="hidden" name="mkt" value="${h.mkt}"><div class="preview" id="calcOut"></div></section>`;
 }
 function tSize(){
   const m=S.v.sm||'KR';const s=S.D.sum[m];const c=MCCY[m];
@@ -1008,10 +1034,10 @@ function calcRun(box){
     if(add>0){const na=(q0*a0+add*p)/(q0+add);h+=R('추가 매수금액',fmtMoney(add*p,c))+R('새 평균단가',fmtMoney(na,c))+R('평단 변화',fmtPct(a0?na/a0-1:0,{d:2}),cls(na-a0))+R('새 보유수량',fmtQty(q0+add)+'주')+R('현재가 기준 수익률',fmtPct(na?cur/na-1:0,{d:2}),cls(cur-na))}
     if(tg>0){if((tg<a0&&p<tg)||(tg>a0&&p>tg)){const need=q0*(a0-tg)/(tg-p);h+=`<div style="height:8px"></div>`+R(`평단 ${fmtMoney(tg,c)} 필요 수량`,fmtQty(Math.ceil(need*100)/100)+'주')+R('필요 금액',fmtMoney(need*p,c))}else h+=`<div class="err">목표 평단은 현재 평단과 매수 단가 사이여야 합니다</div>`}
     out.innerHTML=h||'<span class="muted">추가 매수 수량 또는 목표 평단을 입력하세요</span>'}
-  else if(k==='sell'){const q0=n('q0'),a0=n('a0'),q=n('n'),p=n('p'),fee=q*p*n('rate')/100;
+  else if(k==='sell'){const q0=n('q0'),a0=n('a0'),q=n('n'),p=n('p'),fr=calcFee(v.mkt,str(v.acc),'매도',toSerial(todayStr()),q,p),fee=fr.fee;
     if(q>q0+1e-9){out.innerHTML='<div class="err">보유수량보다 많습니다</div>';return}
     const proceeds=q*p-fee,real=proceeds-q*a0;
-    out.innerHTML=R('매도금액',fmtMoney(q*p,c))+R('수수료+세금',fmtMoney(fee,c))+R('정산금액',fmtMoney(proceeds,c))+R('실현손익',fmtMoney(real,c,{sign:true}),cls(real))+R('수익률',fmtPct(q*a0?real/(q*a0):0,{d:2}),cls(real))+R('남은 수량',fmtQty(q0-q)+'주')+R('남은 평가금액(매도가 기준)',fmtMoney((q0-q)*p,c))}
+    out.innerHTML=R('매도금액',fmtMoney(q*p,c))+R('수수료+세금',fmtMoney(fee,c))+`<div class="xs faint" style="text-align:right">${esc(fr.desc)}</div>`+R('정산금액',fmtMoney(proceeds,c))+R('실현손익',fmtMoney(real,c,{sign:true}),cls(real))+R('수익률',fmtPct(q*a0?real/(q*a0):0,{d:2}),cls(real))+R('남은 수량',fmtQty(q0-q)+'주')+R('남은 평가금액(매도가 기준)',fmtMoney((q0-q)*p,c))}
   else if(k==='size'){const cap=n('cap'),r=n('risk'),e=n('e'),st=n('st'),tg=n('tg');
     if(!(e>0&&st>0)){out.innerHTML='<span class="muted">진입가와 손절가를 입력하세요</span>';return}
     if(st>=e){out.innerHTML='<div class="err">손절가는 진입가보다 낮아야 합니다</div>';return}
@@ -1034,16 +1060,26 @@ function vSettings(){
    <div class="set"><div>지문 / 기기 잠금으로 해제<div class="d">${LS.get('sj.bio')?'등록됨':'미등록'}</div></div>${LS.get('sj.bio')?`<button class="btn sm" data-act="bioOff">해제</button>`:`<button class="btn sm" data-act="bioOn">등록</button>`}</div>
    <div class="set"><div>PIN 변경</div><button class="btn sm" data-act="pinChange">변경</button></div>
    <div class="set"><div>이 기기에서 모두 지우기<div class="d">설정·PIN·지문 등록 삭제 (시트 데이터는 그대로)</div></div><button class="btn sm danger" data-act="wipe">삭제</button></div></section>
-  <section class="card"><h2>거래 입력</h2><p class="xs faint" style="margin:0 0 6px">'자동' 버튼으로 수수료/세금을 거래금액 × 비율로 채웁니다. 증권사·상품별 실제 요율을 입력하세요.</p>
-   <div class="set"><div>국장 매수 수수료 %</div><input class="num" style="width:90px;height:36px;border-radius:9px;border:1px solid var(--line);background:var(--bg2);text-align:right;padding:0 8px" data-cfg="feeKRbuy" inputmode="decimal" value="${c.feeKRbuy}"></div>
-   <div class="set"><div>국장 매도 수수료+세금 %</div><input class="num" style="width:90px;height:36px;border-radius:9px;border:1px solid var(--line);background:var(--bg2);text-align:right;padding:0 8px" data-cfg="feeKRsell" inputmode="decimal" value="${c.feeKRsell}"></div>
-   <div class="set"><div>미장 수수료 %</div><input class="num" style="width:90px;height:36px;border-radius:9px;border:1px solid var(--line);background:var(--bg2);text-align:right;padding:0 8px" data-cfg="feeUS" inputmode="decimal" value="${c.feeUS}"></div></section>
+  ${vFeeSettings()}
   <section class="card"><h2>기능</h2>
    <div class="set"><div>자산 추이 자동 기록<div class="d">앱을 열 때 오늘 값을 App_자산추이에 저장</div></div>${sw('autoSnap')}</div>
    ${D?`<div class="set"><div>앱 전용 시트<div class="d">${['plan','review','snap'].map(k=>`${APP[k]} ${has[k]?'✓':'✗'}`).join(' · ')}</div></div>${['plan','review','snap'].some(k=>!has[k])?`<button class="btn sm pri" data-act="createSheets" data-busy>만들기</button>`:''}</div>`:''}</section>
   ${D?vCheck():''}
   <section class="card"><h2>화면</h2><div class="set"><div>테마</div><select data-cfg="theme">${[['auto','시스템'],['dark','다크'],['light','라이트']].map(([v,l])=>`<option value="${v}" ${c.theme===v?'selected':''}>${l}</option>`).join('')}</select></div></section>
   <p class="xs faint" style="text-align:center">주식일지 v${VERSION} · 데이터는 Google Sheets에만 저장</p>`;
+}
+function vFeeSettings(){
+  const acc=S.D?S.D.acc:DEF_ACC;const c=S.cfg;
+  const inp=(k,f,v,w,type)=>`<input class="num" data-fee="${esc(k)}" data-f="${f}" ${type==='date'?'type="date"':'inputmode="decimal"'} value="${esc(v)}" style="width:100%;height:36px;border-radius:9px;border:1px solid var(--line);background:var(--bg2);text-align:right;padding:0 8px">`;
+  const L=t=>`<span class="xs faint" style="display:block;margin:0 0 3px">${t}</span>`;
+  const blk=m=>acc[m].map(a=>{const k=m+'|'+a,r=feeRule(m,a),cust=!!(c.fees||{})[k];return `<div style="padding:12px 0;border-bottom:1px solid var(--line)">
+    <div class="row sb" style="margin-bottom:8px"><b class="sm">${esc(a)} <i class="badge ${m==='KR'?'kr':'us'}">${MKL[m]}</i>${cust?' <i class="badge">수정됨</i>':''}</b></div>
+    <div class="f3"><label>${L('매수 %')}${inp(k,'b',r.b)}</label><label>${L('매도 %')}${inp(k,'s',r.s)}</label><label>${L('우대 종료일')}${inp(k,'until',r.until,0,'date')}</label></div>
+    <div class="f3" style="margin-top:8px"><label>${L('종료 후 %')}${inp(k,'after',r.after)}</label>${m==='US'?`<label>${L('매도 SEC %')}${inp(k,'sec',r.sec)}</label><label>${L('SEC 최소 $')}${inp(k,'min',r.min)}</label>`:''}</div></div>`}).join('');
+  return `<section class="card"><h2>매매 수수료 <button class="act" data-act="feeReset">기본값</button></h2>
+   <p class="xs faint" style="margin:0 0 4px">계좌별 요율로 거래 기록의 수수료를 자동 계산합니다(거래일 기준). 우대 종료일 이후 거래는 '종료 후 %'를 적용하고, 비워두면 같은 요율을 유지합니다. 국장은 원 단위 절사, 미장은 센트 단위.</p>
+   ${blk('KR')}${blk('US')}
+   <div class="set"><div>국장 매도 거래세 %<div class="d">모든 국장 계좌 매도에 추가. 주식/ETF 세율이 다르니 직접 입력 (0이면 미적용)</div></div><input class="num" style="width:90px;height:36px;border-radius:9px;border:1px solid var(--line);background:var(--bg2);text-align:right;padding:0 8px" data-cfg="taxKRsell" inputmode="decimal" value="${c.taxKRsell||0}"></div></section>`;
 }
 function vCheck(){
   const D=S.D,L=[];
@@ -1059,7 +1095,7 @@ function openTradeForm(o){
   const D=S.D;let h=o.key?D.byKey[o.key]:null;const mkt=h?h.mkt:(o.mkt||(S.v.hf==='US'?'US':'KR'));
   if(!h){h=D.mk[mkt].holdings.find(x=>x.active)||D.mk[mkt].holdings[0]}
   const ed=o.edit||null;
-  TF={mkt,key:h?h.key:'',type:ed?ed.type:(o.type||'매수'),edit:ed,review:!ed};
+  TF={mkt,key:h?h.key:'',type:ed?ed.type:(o.type||'매수'),edit:ed,review:!ed,feeManual:!!ed};
   const t=ed||{};const accs=D.acc[mkt];const defAcc=ed?ed.acc:(h&&h.trades.length?h.trades[h.trades.length-1].acc:accs[0]);
   openModal(`<h3>${ed?'거래 수정':'거래 기록'}</h3>
    ${ed?'':`<div style="margin-bottom:12px">${['KR','US'].map(m=>`<button class="chip ${mkt===m?'on':''}" data-act="tfMkt" data-val="${m}">${MKL[m]}</button>`).join(' ')}</div>`}
@@ -1069,12 +1105,12 @@ function openTradeForm(o){
    <label class="fld"><span>계좌</span><select name="acc" data-tf>${[...new Set([...accs,defAcc].filter(Boolean))].map(a=>`<option ${a===defAcc?'selected':''}>${esc(a)}</option>`).join('')}</select></label></div>
    <div class="f2"><label class="fld"><span>수량</span><input name="qty" inputmode="decimal" value="${ed?Math.abs(ed.qty):''}" data-tf autocomplete="off"></label>
    <label class="fld"><span>단가 (${MCCY[mkt]})</span><input name="price" inputmode="decimal" value="${ed?ed.price:(h?h.price:'')}" data-tf autocomplete="off"></label></div>
-   <label class="fld"><span>수수료/세금 (${MCCY[mkt]})</span><div class="inl"><input name="fee" inputmode="decimal" value="${ed?ed.fee:0}" data-tf><button class="btn sm" data-act="tfFee">자동</button></div></label>
+   <label class="fld"><span>수수료/세금 (${MCCY[mkt]})</span><div class="inl"><input name="fee" inputmode="decimal" value="${ed?ed.fee:0}" data-tf><button class="btn sm" data-act="tfFee">자동</button></div><div class="hint" id="feeHint">${ed?'기존 입력값 유지 · 자동을 누르면 계좌 요율로 다시 계산':''}</div></label>
    <label class="fld"><span>메모</span><input name="memo" value="${esc(ed?ed.memo:'')}" maxlength="200"></label>
    ${ed?'':`<details style="margin:0 0 12px"><summary class="sm muted" style="cursor:pointer;padding:4px 0">＋ 매매 근거 · 회고 함께 기록 ${D.has.review?'':'(앱 시트 필요)'}</summary><div style="margin-top:10px">${reviewFields({})}</div></details>`}
    <div class="preview" id="tfPrev"></div><div class="err" id="tfErr"></div>
    <div class="btns"><button class="btn" data-act="closeModal">취소</button><button class="btn ${TF.type==='매수'?'buy':'sell'}" id="tfSave" data-act="tfSave" data-busy>${ed?'수정 저장':'시트에 기록'}</button></div>`,
-   el=>tfPreview(el));
+   el=>{tfAutoFee(el);tfPreview(el)});
 }
 function reviewFields(r){
   return `<div class="sect" style="margin-top:0">전략 태그</div><div class="row wrapf" style="gap:6px" id="rvTags">${[...new Set([...TAGS,...(r.tags||[])])].map(g=>`<button class="chip ${(r.tags||[]).includes(g)?'on':''}" data-act="rvTag" data-val="${esc(g)}">${esc(g)}</button>`).join('')}</div>
@@ -1086,6 +1122,13 @@ function readReview(el){return {tags:$$('#rvTags .chip.on',el).map(b=>b.dataset.
 function tfData(el){
   const v=fv(el);const h=S.D.byKey[TF.key];const q=num(v.qty),p=num(v.price),f=num(v.fee);
   return {h,t:{date:toSerial(v.date),type:TF.type,qty:TF.type==='매도'?-Math.abs(q):Math.abs(q),price:p,fee:f,acc:str(v.acc),memo:str(v.memo)},q,p,f,v};
+}
+function tfAutoFee(el,force){
+  el=el||$('#modal .sheet');if(!el||!TF)return;if(TF.feeManual&&!force)return;
+  const v=fv(el);const r=calcFee(TF.mkt,str(v.acc),TF.type,toSerial(v.date),num(v.qty),num(v.price));
+  const f=$('[name=fee]',el);if(f)f.value=TF.mkt==='KR'?r.fee:r.fee.toFixed(2);
+  const hEl=$('#feeHint',el);if(hEl)hEl.textContent='자동: '+r.desc;
+  if(force)TF.feeManual=false;
 }
 function tfPreview(el){
   el=el||$('#modal .sheet');if(!el||!TF)return;const out=$('#tfPrev',el),err=$('#tfErr',el);const {h,t,q,p}=tfData(el);err.textContent='';
@@ -1205,9 +1248,8 @@ const A={
   async wipe(){if(await confirmBox('이 기기 데이터 삭제','설정·PIN·지문 등록을 이 기기에서 삭제합니다. 시트 데이터는 그대로입니다.','삭제','danger'))wipeLocal()},
   newTrade(el){openTradeForm({key:el.dataset.key,type:el.dataset.type,mkt:el.dataset.mkt})},
   tfMkt(el){openTradeForm({mkt:el.dataset.val,type:TF?TF.type:'매수'})},
-  tfType(el){TF.type=el.dataset.val;$$('[data-act=tfType]').forEach(b=>b.classList.toggle('on',b.dataset.val===TF.type));const s=$('#tfSave');s.className='btn '+(TF.type==='매수'?'buy':'sell');tfPreview()},
-  tfFee(){const el=$('#modal .sheet');const v=fv(el);const amt=num(v.qty)*num(v.price);const r=TF.mkt==='KR'?(TF.type==='매수'?S.cfg.feeKRbuy:S.cfg.feeKRsell):S.cfg.feeUS;
-    if(!r){toast('설정에서 수수료율을 먼저 입력하세요');return}$('[name=fee]',el).value=TF.mkt==='KR'?Math.round(amt*r/100):(Math.round(amt*r)/100).toFixed(2);tfPreview()},
+  tfType(el){TF.type=el.dataset.val;$$('[data-act=tfType]').forEach(b=>b.classList.toggle('on',b.dataset.val===TF.type));const s=$('#tfSave');s.className='btn '+(TF.type==='매수'?'buy':'sell');tfAutoFee();tfPreview()},
+  tfFee(){tfAutoFee(null,true);tfPreview()},
   tfSave(){tfSave()},
   tradeMenu(el){tradeMenu(el.dataset.key,el.dataset.row)},
   tradeEdit(el){const h=S.D.byKey[el.dataset.key];const t=h.trades.find(x=>x.row===+el.dataset.row);openTradeForm({key:h.key,edit:t})},
@@ -1248,6 +1290,7 @@ const A={
     run(()=>Store.createAppSheets(miss),'시트를 만들었습니다')},
   snapNow(){run(()=>Store.snapshot(),'오늘 자산을 기록했습니다')},
   toolFor(el){S.v.tool=el.dataset.val;S.v.tk=el.dataset.key;S.v.stock=null;S.v.tab='tool';render();window.scrollTo(0,0)},
+  async feeReset(){if(await confirmBox('수수료 기본값','계좌별 수수료를 기본값(토스·메리츠 요율)으로 되돌릴까요?','되돌리기')){S.cfg.fees={};saveCfg();render();toast('기본값으로 되돌렸습니다')}},
   rbReset(){S.rbw=null;render()},
   rbSave(){const D=S.D;const ch=Object.entries(S.rbw||{});if(!ch.length)return toast('변경된 목표비중이 없습니다');
     run(async()=>{for(const [k,w] of ch){const h=D.byKey[k];const p=D.plans[k]||{};await Store.upsert('plan',k,[k,MKL[h.mkt],h.tab,p.target||'',p.stop||'',w||'',safeText(p.thesis||''),safeText(p.memo||''),"'"+nowStr()])}S.rbw=null},'목표비중을 저장했습니다')}
@@ -1257,16 +1300,17 @@ function wipeLocal(){['sj.cfg','sj.pin','sj.bio','sj.fail'].forEach(LS.del);S.cf
 document.addEventListener('click',e=>{const el=e.target.closest('[data-act]');if(!el||el.disabled)return;const f=A[el.dataset.act];if(f){e.preventDefault();f(el,e)}});
 document.addEventListener('input',e=>{
   const t=e.target;
-  if(t.closest('[data-tf]')||t.matches('[data-tf]')){if(t.name==='key'){return}tfPreview()}
+  if(t.closest('[data-tf]')||t.matches('[data-tf]')){if(t.name==='key'){return}if(t.name==='fee'){TF.feeManual=true;const hEl=$('#feeHint');if(hEl)hEl.textContent='직접 입력 · 자동을 누르면 계좌 요율로 다시 계산'}else tfAutoFee();tfPreview()}
   const box=t.closest('[data-calc]');if(box)calcRun(box);
   if(t.matches('[data-rbw]')){S.rbw=S.rbw||{};S.rbw[t.dataset.rbw]=num(t.value)}
   if(t.matches('[data-ff]')){const el=$('#modal .sheet');const u=num($('[name=usd]',el).value),fx=num($('[name=fx]',el).value);if(u&&fx)$('[name=krw]',el).value=Math.round(u*fx)}
 });
 document.addEventListener('change',e=>{
   const t=e.target;
-  if(t.matches('[data-tf][name=key]')){if(t.value==='__new'){newTickerForm(TF.mkt);return}TF.key=t.value;const h=S.D.byKey[t.value];const el=$('#modal .sheet');if(h&&!TF.edit){$('[name=price]',el).value=h.price;const la=h.trades.length?h.trades[h.trades.length-1].acc:'';if(la)$('[name=acc]',el).value=la}tfPreview();return}
+  if(t.matches('[data-tf][name=key]')){if(t.value==='__new'){newTickerForm(TF.mkt);return}TF.key=t.value;const h=S.D.byKey[t.value];const el=$('#modal .sheet');if(h&&!TF.edit){$('[name=price]',el).value=h.price;const la=h.trades.length?h.trades[h.trades.length-1].acc:'';if(la)$('[name=acc]',el).value=la}tfAutoFee();tfPreview();return}
   if(t.matches('[data-pick]')){S.v.tk=t.value;render();return}
   if(t.matches('[data-rbw]')){render();return}
+  if(t.matches('[data-fee]')){const k=t.dataset.fee,[m,...rest]=k.split('|'),a=rest.join('|');const r=feeRule(m,a);const f=t.dataset.f;r[f]=f==='until'?t.value:(str(t.value)===''?'':num(t.value));S.cfg.fees=Object.assign({},S.cfg.fees,{[k]:r});saveCfg();toast('저장했습니다',1000);render();return}
   if(t.matches('[data-cfg]')){const k=t.dataset.cfg;S.cfg[k]=k==='theme'?t.value:num(t.value);saveCfg();if(k==='theme')applyTheme();toast('저장했습니다',1200)}
 });
 // 계산기 초기 렌더
