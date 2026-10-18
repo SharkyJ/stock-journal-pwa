@@ -1,0 +1,9 @@
+name: CSP check
+on: [push, pull_request]
+jobs:
+  csp:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inline script hash matches CSP
+        run: python3 build.py --check
