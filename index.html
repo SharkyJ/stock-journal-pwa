@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-cbO8K8gCo1pqpvfmUQgauBPffVyAYMLVwF5thD/JB7I=' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; connect-src https://sheets.googleapis.com https://www.googleapis.com https://oauth2.googleapis.com https://accounts.google.com/gsi/ https://*.workers.dev; frame-src https://accounts.google.com/gsi/; img-src 'self' data:; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-RGR8YYaCE62kKAu2Tfdyzs97TkzzC9dgpmcxI+IDe8c=' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; connect-src https://sheets.googleapis.com https://www.googleapis.com https://oauth2.googleapis.com https://accounts.google.com/gsi/ https://*.workers.dev; frame-src https://accounts.google.com/gsi/; img-src 'self' data:; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
 <meta name="robots" content="noindex,nofollow">
 <meta name="theme-color" content="#0b0f17">
@@ -628,11 +628,36 @@ const confirmBox=(t,m,ok='확인',c='pri')=>dlg(t,m,[{t:'취소',v:false},{t:ok,
 const alertBox=(t,m)=>dlg(t,m,[{t:'확인',v:true,c:'pri'}]);
 function closeDlg(){$('#dlg').innerHTML=''}
 function fv(el){const o={};$$('[name]',el).forEach(i=>{if(i.type==='checkbox')o[i.name]=i.checked;else o[i.name]=i.value});return o}
+/* 뒤로가기: 기본(sjb) 위에 가드(sjg)를 두고, 홈에서 가드가 빠지면 종료 확인.
+   Chrome은 사용자 입력 없이 넣은 기록을 뒤로가기에서 건너뛰므로 가드는 터치/키 입력 때 다시 건다. */
+const atBase=()=>!!(history.state&&history.state.sjb);
+function armGuard(){
+  if(S.exitAsk&&!$('#dlg').innerHTML)S.exitAsk=false;
+  if(atBase()&&!S.exitAsk&&!S.exiting){history.pushState({sjg:1},'');S.depth=0}
+}
+document.addEventListener('pointerdown',armGuard,true);
+document.addEventListener('keydown',armGuard,true);
+const navPush=st=>{history.pushState(st,'');S.depth=(S.depth||0)+1};
+async function askExit(){
+  S.exitAsk=true;
+  const ok=await confirmBox('앱 종료','주식일지를 종료할까요?','종료');
+  S.exitAsk=false;
+  if(!ok){armGuard();return}
+  S.exiting=true;
+  try{window.close()}catch(e){}
+  history.back();
+  // 첫 화면이라 더 돌아갈 곳이 없으면(브라우저 탭 등) 그대로 남는다 → 다음 뒤로가기로 종료
+  setTimeout(()=>{if(document.visibilityState==='visible'){S.exiting=false;toast('뒤로 버튼을 한 번 더 누르면 종료됩니다')}},400);
+}
 window.addEventListener('popstate',()=>{
   if(S.skipPop){S.skipPop=false;return}
-  if(S.modal){closeModal(true);return}
-  if(S.v.stock){S.v.stock=null;render();return}
-  if(S.v.tab!=='home'&&!S.locked){S.v.tab='home';render()}
+  if(S.exiting)return;
+  let handled=true;
+  if(S.modal)closeModal(true);
+  else if(S.v.stock){S.v.stock=null;S.depth=Math.max(0,(S.depth||0)-1);render()}
+  else if(S.v.tab!=='home'&&!S.locked){S.v.tab='home';S.depth=0;render()}
+  else{handled=false;S.depth=Math.max(0,(S.depth||0)-1)}
+  if(atBase()&&!handled)askExit();
 });
 const seg=(k,opts,c='')=>`<div class="seg ${c}">${opts.map(([v,l])=>`<button data-act="set" data-k="${k}" data-val="${v}" class="${S.v[k]===v?'on':''}">${l}</button>`).join('')}</div>`;
 const chips=(k,opts)=>`<div class="chips">${opts.map(([v,l])=>`<button class="chip ${S.v[k]===v?'on':''}" data-act="set" data-k="${k}" data-val="${v}">${l}</button>`).join('')}</div>`;
@@ -1376,9 +1401,12 @@ function setupEditForm(){
 /* ================= 액션 ================= */
 const A={
   set(el){S.v[el.dataset.k]=el.dataset.val;if(el.dataset.k==='rbs'||el.dataset.k==='rbc')S.rbw=S.rbw||null;render()},
-  tab(el){const v=el.dataset.val;if(S.v.stock)S.v.stock=null;if(v!=='home'&&S.v.tab==='home')history.pushState({sjt:1},'');S.v.tab=v;render();window.scrollTo(0,0)},
-  goHold(el){S.v.hf=el.dataset.val;history.pushState({sjt:1},'');S.v.tab='hold';render();window.scrollTo(0,0)},
-  stock(el){S.v.stock=el.dataset.key;history.pushState({sjs:1},'');render();window.scrollTo(0,0)},
+  tab(el){const v=el.dataset.val;if(S.v.stock)S.v.stock=null;
+    if(v==='home'&&S.depth>0){const n=S.depth;S.depth=0;S.skipPop=true;history.go(-n)}  // 홈으로 가면 쌓인 화면 기록을 정리해 다음 뒤로가기가 바로 종료 확인
+    else if(v!=='home'&&S.v.tab==='home')navPush({sjt:1});
+    S.v.tab=v;render();window.scrollTo(0,0)},
+  goHold(el){S.v.hf=el.dataset.val;navPush({sjt:1});S.v.tab='hold';render();window.scrollTo(0,0)},
+  stock(el){S.v.stock=el.dataset.key;navPush({sjs:1});render();window.scrollTo(0,0)},
   back(){history.back()},
   refresh(){if(S.D||tokenOk())load(true);else A.connect()},
   lock(){if(LS.get('sj.pin'))lock()},
@@ -1641,6 +1669,7 @@ const Demo=(()=>{
 /* ================= 부트 ================= */
 function boot(){
   applyTheme();
+  history.replaceState({sjb:1},'');
   if(window.matchMedia)matchMedia('(prefers-color-scheme: light)').addEventListener('change',applyTheme);
   if('serviceWorker' in navigator&&location.protocol==='https:')navigator.serviceWorker.register('sw.js').catch(()=>{});
   if(configured()&&!S.cfg.demo)loadGIS().catch(()=>{});
