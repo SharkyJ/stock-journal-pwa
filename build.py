@@ -23,7 +23,7 @@ csp = "; ".join([
     "default-src 'none'",
     f"script-src 'sha256-{digest}' https://accounts.google.com/gsi/client",
     "style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style",
-    "connect-src https://sheets.googleapis.com https://www.googleapis.com https://oauth2.googleapis.com https://accounts.google.com/gsi/",
+    "connect-src https://sheets.googleapis.com https://www.googleapis.com https://oauth2.googleapis.com https://accounts.google.com/gsi/ https://*.workers.dev",
     "frame-src https://accounts.google.com/gsi/",
     "img-src 'self' data:",
     "manifest-src 'self'",
