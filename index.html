@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-GnADzUFvRWd2J8t64cIuz9Pndg1EWXxL+1K9xqzQjf0=' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; connect-src https://sheets.googleapis.com https://www.googleapis.com https://oauth2.googleapis.com https://accounts.google.com/gsi/ https://*.workers.dev; frame-src https://accounts.google.com/gsi/; img-src 'self' data:; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-6Qy7jZOyqQ8FxYbhvBFuGDwP6Rt+G4moc5gfdeD2M+0=' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; connect-src https://sheets.googleapis.com https://www.googleapis.com https://oauth2.googleapis.com https://accounts.google.com/gsi/ https://*.workers.dev; frame-src https://accounts.google.com/gsi/; img-src 'self' data:; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
 <meta name="robots" content="noindex,nofollow">
 <meta name="theme-color" content="#0b0f17">
@@ -226,11 +226,11 @@ code{background:var(--bg2);padding:1px 5px;border-radius:5px;font-size:12.5px}
 <script>
 'use strict';
 /* ================= 상수 / 유틸 ================= */
-const VERSION='1.2.0';
+const VERSION='1.3.0';
 const SH='https://sheets.googleapis.com/v4/spreadsheets';
 const SHEETS_SCOPE='https://www.googleapis.com/auth/spreadsheets';
 const SCOPES=SHEETS_SCOPE+' openid email';
-const APP={plan:'App_매매계획',review:'App_매매회고',snap:'App_자산추이',watch:'App_관심종목',outlook:'App_전망'};
+const APP={plan:'App_매매계획',review:'App_매매회고',snap:'App_자산추이',watch:'App_관심종목',outlook:'App_전망',signal:'App_시그널'};
 const APPK=Object.keys(APP);
 const CASH='현금투자';
 const HDR={
@@ -238,9 +238,10 @@ const HDR={
   review:['거래키','시장','종목탭','거래일자','구분','수량','단가','전략태그','감정','회고','평점','작성일'],
   snap:['일자','투자원금(KRW)','총평가자산(KRW)','총손익(KRW)','수익률','국장 총평가(KRW)','미장 총평가(USD)','예수금(KRW환산)','환율(USD/KRW)','국장 원금(KRW)','미장 원금(USD)','기록시각'],
   watch:['티커','종목명','시장','메모','추가일'],
-  outlook:['작성일','구분','티커','종목명','단기','중기','장기','요약','근거·이벤트','출처']
+  outlook:['작성일','구분','티커','종목명','단기','중기','장기','요약','근거·이벤트','출처'],
+  signal:['키','신호일','시장','티커','종목명','구분','전략','신호','근거','가격','기준 심볼','기록시각']
 };
-const HCOL={plan:'I',review:'L',snap:'L',watch:'E',outlook:'J'};
+const HCOL={plan:'I',review:'L',snap:'L',watch:'E',outlook:'J',signal:'L'};
 const MKL={KR:'국장',US:'미장'};
 const MCCY={KR:'KRW',US:'USD'};
 const DEF_ACC={KR:['메리츠증권','메리츠 RIA','토스증권','토스 RIA'],US:['메리츠증권','토스증권']};
@@ -248,7 +249,7 @@ const TAGS=['추세추종','눌림목','돌파','실적','뉴스/이벤트','장
 const EMOS=['확신','보통','불안','FOMO','공포','후회'];
 const LEV_US=new Set(['SOXL','TQQQ','UPRO','SPXL','TECL','FNGU','NVDL','NVDU','TSLL','METU','CONL','MSTU','SOXS','SQQQ','LABU','TNA','UDOW','QLD','SSO','USD','ROM','GGLL','AMZU','AAPU','MSFU','BITX','TSLT','NVDX','AVL','MUU','SNDU']);
 const PAL=['#6c8cff','#f5a524','#22c3a6','#e5568f','#9b7bff','#41b8e8','#f07c3c','#a3c94a'];
-const DEF={clientId:'',mainId:'',krId:'',usId:'',email:'',chartUrl:'',sp:{},under:{},lockMin:3,fees:{},fxp:{},taxKRsell:0,autoSnap:true,theme:'auto',demo:false};
+const DEF={clientId:'',mainId:'',krId:'',usId:'',email:'',chartUrl:'',sp:{},under:{},lockMin:3,fees:{},fxp:{},taxKRsell:0,autoSnap:true,sigLog:true,theme:'auto',demo:false};
 
 /* 계좌별 매매 수수료 기본값 (설정에서 계좌별로 덮어씀). 키: 시장|계좌명에 포함된 증권사명
    b/s: 매수/매도 수수료 %, sec: 미장 매도 SEC Fee %, min: SEC 최소금액($), until: 우대요율 종료일, after: 종료 후 수수료 % */
@@ -485,6 +486,7 @@ function buildData(raw){
   D.wByKey={};D.watch.forEach(w=>{const k='관심_'+w.ticker;D.wByKey[k]={key:k,watch:true,mkt:w.mkt,ccy:MCCY[w.mkt],ticker:w.ticker,name:w.name||w.ticker.split(':').pop(),tab:w.name||w.ticker,sheetId:'w'+w.row,qty:0,avg:0,price:0,trades:[],active:false,memo:w.memo}});
   const ol=(raw.outlook||[]).map((r,i)=>({row:i+2,date:toSerial(r[0]),kind:str(r[1]),ticker:str(r[2]).toUpperCase(),name:str(r[3]),s:str(r[4]),m:str(r[5]),l:str(r[6]),sum:str(r[7]),ev:str(r[8]),src:str(r[9])})).filter(o=>o.date);
   const ld=ol.length?Math.max(...ol.map(o=>o.date)):0;D.outlook={date:ld,rows:ol.filter(o=>o.date===ld)};
+  D.signals=(raw.signal||[]).map((r,i)=>sigParse(r,i+2)).filter(o=>o.key&&o.date);D.sigKeys=new Set(D.signals.map(o=>o.key));
   return D;
 }
 const curStock=()=>S.D&&S.v.stock?(S.D.byKey[S.v.stock]||(S.D.wByKey||{})[S.v.stock]):null;
@@ -571,7 +573,11 @@ const Store={
     await batchUpdateVals(id,miss.map(k=>({range:`${qn(APP[k])}!A1:${HCOL[k]}1`,values:[HDR[k]]})));
   },
   snapRow(){const D=S.D,s=D.sum;return [todayStr(),s.TOT.principal,s.TOT.total,s.TOT.pnl,s.TOT.rr,s.KR.total,s.US.total,s.TOT.cash,D.fx,s.KR.principal,s.US.principal,"'"+nowStr()]},
-  async snapshot(){return this.upsert('snap',todayStr(),this.snapRow())}
+  async snapshot(){return this.upsert('snap',todayStr(),this.snapRow())},
+  // 신호 이력: 쓰기 직전 A열(키)을 다시 읽어 다른 기기에서 이미 기록한 신호는 건너뛰고 맨 아래에 추가
+  async addSignals(rows){const id=ids().main,T=qn(APP.signal);const col=await getVals(id,`${T}!A:A`);const have=new Set(col.map(r=>str(r[0])));
+    const add=rows.filter(r=>!have.has(r[0]));if(!add.length)return [];const st=Math.max(2,col.length+1);
+    await batchUpdateVals(id,[{range:`${T}!A${st}:L${st+add.length-1}`,values:add}]);return add.map((r,i)=>({row:st+i,r}))}
 };
 // 날짜를 키로 쓰는 자산추이는 A열이 날짜 serial로 저장되므로 별도 조회
 Store.rowOf=(function(orig){return async function(k,key){
@@ -995,7 +1001,7 @@ const SG={d:{},q:[],run:0,fund:{},t:0};
 const sgE=(sym,r='2y')=>SG.d[sym+'|'+r];
 function sgX(sym,r='2y'){const e=sgE(sym,r);if(!e||!e.d||e.d.c.length<30)return null;if(!e.X)e.X=TA.compute(e.d,spP());return e.X}
 function sgQueue(key,job){if(SG.q.some(x=>x.key===key))return;SG.q.push({key,job});sgPump()}
-function sgPump(){while(SG.run<4&&SG.q.length){const {job}=SG.q.shift();SG.run++;job().finally(()=>{SG.run--;sgPump();sgRepaint()})}}
+function sgPump(){while(SG.run<4&&SG.q.length){const {job}=SG.q.shift();SG.run++;job().finally(()=>{SG.run--;sgPump();sgRepaint();if(!SG.run&&!SG.q.length)sgLogScan()})}}
 function sgNeed(list,r='2y'){list.forEach(sym=>{if(!sym)return;const k=sym+'|'+r,e=SG.d[k]||(SG.d[k]={});
   if(e.busy||e.at&&Date.now()-e.at<(e.err?120e3:e.d&&e.d.open?600e3:3600e3))return;e.busy=1;
   sgQueue(k,()=>pxFetch(sym,r).then(d=>{e.d=d;e.err='';e.X=null},x=>{e.err=x.message}).finally(()=>{e.busy=0;e.at=Date.now()}))})}
@@ -1010,10 +1016,12 @@ function fundNeed(sym){if(!sym)return;const o=SG.fund[sym]||(SG.fund[sym]={});if
 const sgReady=()=>S.cfg.demo||chartUrlOk(S.cfg.chartUrl);
 // 화면에 필요한 시세를 요청 (render 직후·15초 간격)
 function sgAuto(){if(!S.D||S.locked||!sgReady())return;
+  if(S.D.has.signal&&S.cfg.sigLog&&!SGL.busy&&Date.now()-SGL.at>10*60e3){const all=new Set();sgUniverse('all').forEach(x=>sgSyms(x).list.forEach(s=>all.add(s)));sgNeed([...all]);if(!SG.run&&!SG.q.length)sgLogScan()}
   const h=curStock();if(S.v.stock&&h){const s=sgSyms(h);sgNeed(s.list);if(s.sym)sgNeed([s.sym],'5yd');if(s.own&&!s.u)fundNeed(s.own);return}
   if(S.v.tab!=='strat')return;const sg=S.v.sg||'sig';
   if(sg==='sig'){const U=sgUniverse();const all=new Set();U.forEach(x=>sgSyms(x).list.forEach(s=>all.add(s)));sgNeed([...all]);U.forEach(x=>{const s=sgSyms(x);if(s.own&&!s.u)fundNeed(s.own)})}
-  else if(sg==='mkt')sgNeed(MKT_IDX.map(x=>x[0]));}
+  else if(sg==='mkt')sgNeed(MKT_IDX.map(x=>x[0]));
+  else if(sg==='log'){const ys=new Set();S.D.signals.slice(-150).forEach(o=>{const own=ySym({mkt:o.mkt,ticker:o.ticker});if(own)ys.add(own);if(o.sym)ys.add(o.sym)});sgNeed([...ys])}}
 function sgRepaint(){clearTimeout(SG.t);SG.t=setTimeout(()=>{if(S.locked||!S.D)return;const h=curStock();
   if(S.v.stock&&h){const el=$('#sgc');if(el)el.innerHTML=stratCard(h);pxPaint(h);return}
   if(S.v.tab==='strat'&&(S.v.sg||'sig')!=='tool'){const el=$('#sgv');if(el&&!el.contains(document.activeElement))el.innerHTML=vStratBody()}},150)}
@@ -1055,8 +1063,8 @@ const fmtPx=(v,h)=>h&&h.ccy?fmtMoney(v,h.ccy):fmtNum(v,2);
 
 /* ================= 전략 탭 ================= */
 function vStrat(){const sg=S.v.sg||'sig';
-  return `<div style="margin-top:12px">${seg('sg',[['sig','신호'],['mkt','시장'],['out','전망'],['tool','도구']],'full')}</div>${sg==='tool'?vTool():`<div id="sgv">${vStratBody()}</div>`}`}
-function vStratBody(){const sg=S.v.sg||'sig';if(sg==='out')return vOut();
+  return `<div style="margin-top:12px">${seg('sg',[['sig','신호'],['mkt','시장'],['out','전망'],['log','기록'],['tool','도구']],'full')}</div>${sg==='tool'?vTool():`<div id="sgv">${vStratBody()}</div>`}`}
+function vStratBody(){const sg=S.v.sg||'sig';if(sg==='out')return vOut();if(sg==='log')return vLog();
   if(!sgReady())return `<section class="card"><h2>시세 서버 연결 필요</h2><div class="sm muted">신호·시장 분석은 주가 차트와 같은 Cloudflare Worker로 시세를 받습니다. 설정 → 기능 → 주가 차트 서버를 먼저 연결하세요.</div><button class="btn sm pri" style="margin-top:12px" data-act="chartUrlForm">연결</button></section>`;
   return sg==='mkt'?vMkt():vSig()}
 const SG_NOTE=`<p class="xs faint" style="margin:10px 2px 0">신호는 조건 충족 여부를 보여줄 뿐 매수·매도 권유가 아닙니다. 시세는 Yahoo Finance(국장 약 20분 지연), 재무·컨센서스는 네이버 증권·Yahoo 기준입니다.</p>`;
@@ -1144,6 +1152,7 @@ function stratCard(h){if(!sgReady())return `<h2>전략 분석</h2><div class="sm
    ${rngH}
    ${rk||tr?`<div class="sect">리스크</div>${rk}${tr}${dc}`:''}
    <div class="sect">전략 프리셋</div>${pr}
+   ${sigRecent(h)}
    <div class="sect">지표</div><div class="kvg">${ind.map(([k,v])=>`<div><span>${k}</span><b class="num">${v}</b></div>`).join('')}</div>
    ${fundBlock(h,x)}
    ${ol?`<div class="sect">Claude 주간 전망 <span class="xs faint">${sToStr(S.D.outlook.date)}</span></div><div class="olc" style="border:0;padding:0"><div class="hz" style="margin-bottom:4px">${hzChip('단',OLV(ol.s))+hzChip('중',OLV(ol.m))+hzChip('장',OLV(ol.l))}</div><div class="sm" style="white-space:pre-wrap">${esc(ol.sum)}</div>${ol.ev?`<div class="xs muted" style="margin-top:4px;white-space:pre-wrap">${esc(ol.ev)}</div>`:''}</div>`:''}
@@ -1187,6 +1196,83 @@ function spForm(){const P=spP(),D=S.D;const lev=D.hold.filter(h=>h.active&&h.lev
    ${lev.map(h=>{const u=underOf(h);return `<div class="grid2" style="grid-template-columns:2fr 1fr"><label class="fld"><span>${esc(h.name)}</span><input data-under="${esc(h.ticker)}" value="${esc(u?u[0]:'')}" autocapitalize="characters" spellcheck="false"></label><label class="fld"><span>배수</span><input data-lev="${esc(h.ticker)}" inputmode="decimal" value="${u?u[1]:''}"></label></div>`}).join('')}`:''}
    <div class="btns"><button class="btn" data-act="spReset">기본값</button><button class="btn pri" data-act="spSave">저장</button></div>`)}
 function sgReset(){Object.values(SG.d).forEach(e=>{e.X=null})}
+
+
+/* ================= 신호 이력 (App_시그널) ================= */
+// 확정된 일봉(장중이면 마지막 봉 제외) 최근 10봉에서 새로 켜진 신호만 찾아 기록. 키 = 신호일|티커|전략|신호 로 중복 방지
+const SGL={at:0,busy:false,last:0,n:0,err:''};
+const SIGC={buy:'매수 신호',sell:'매도·경계',trail:'트레일링 스탑 이탈'};
+function trailSeries(X0,start,m){const L=X0.L,stop=new Array(L).fill(null);let i0=X0.ser.findIndex(v=>v>=start);if(i0<0)return {stop,i0:L};let hi=-Infinity;
+  for(let j=i0;j<L;j++){hi=Math.max(hi,X0.h[j]);if(X0.atr[j]!=null)stop[j]=hi-m*X0.atr[j]}return {stop,i0}}
+function sigEvents(){const out=[],P=spP(),now="'"+nowStr(),D=S.D;
+  // 같은 종목·전략·신호는 14일 안에 다시 기록하지 않음 (신호가 경계에서 켜졌다 꺼졌다 하는 잡음 방지)
+  const last={};D.signals.forEach(o=>{const c=o.sig===SIGC.buy?'buy':o.sig===SIGC.trail?'trail':'sell',pid=(PRESETS.find(p=>p.name===o.strat)||{id:'risk'}).id,k=o.ticker+'|'+pid+'|'+c;last[k]=Math.max(last[k]||0,o.date)});
+  const mEnd=(X,i)=>i<X.L-1&&new Date((X.ser[i]-25569)*864e5).getUTCMonth()!==new Date((X.ser[i+1]-25569)*864e5).getUTCMonth();
+  sgUniverse('all').forEach(h=>{const it=sgItem(h),X=it.X;if(!X)return;
+    const live=d=>d&&d.open,eS=sgE(it.s.sym),end=X.L-1-(live(eS&&eS.d)?1:0),from=Math.max(1,end-9);
+    const pxAt=ser=>(it.X0&&TA.closeAt(it.X0,ser))||TA.closeAt(X,ser);
+    const push=(ser,sid,sname,code,why,px,sym)=>{const k=h.ticker+'|'+sid+'|'+code;if(last[k]&&ser-last[k]<14)return;last[k]=ser;
+      out.push([`${sToStr(ser)}|${h.ticker}|${sid}|${code}`,sToStr(ser),MKL[h.mkt],h.ticker,safeText(h.name),h.watch?'관심':'보유',sname,SIGC[code],safeText(why.filter(Boolean).join(' · ')),px?Math.round(px*1e4)/1e4:'',sym,now])};
+    PRESETS.forEach(p=>{
+      if(p.id==='dm'){// 듀얼 모멘텀은 월말 종가 기준으로만 비교
+        const ends=[];for(let i=Math.max(1,end-60);i<=end;i++)if(mEnd(X,i))ends.push(i);
+        for(let k=1;k<ends.length;k++){const i=ends[k];if(i<from)continue;const e=p.ev(X,i,it.ctx,P),q=p.ev(X,ends[k-1],it.ctx,P);if(!e||!q)continue;
+          if(e.s===1&&q.s!==1)push(X.ser[i],p.id,p.name,'buy',e.r,pxAt(X.ser[i]),it.s.sym);else if(e.s===-1&&q.s!==-1)push(X.ser[i],p.id,p.name,'sell',e.r,pxAt(X.ser[i]),it.s.sym)}
+        return}
+      let prev=p.ev(X,from-1,it.ctx,P);for(let i=from;i<=end;i++){const e=p.ev(X,i,it.ctx,P),s=e?e.s:null,ps=prev?prev.s:null;
+      if(ps!=null&&s===1&&ps!==1)push(X.ser[i],p.id,p.name,'buy',e.r,pxAt(X.ser[i]),it.s.sym);
+      else if(ps!=null&&s===-1&&ps!==-1)push(X.ser[i],p.id,p.name,'sell',e.r,pxAt(X.ser[i]),it.s.sym);prev=e}});
+    const X0=it.X0;if(!h.watch&&X0){const e0=sgE(it.s.own),end0=X0.L-1-(live(e0&&e0.d)?1:0),{stop,i0}=trailSeries(X0,posStart(h),P.trailM);
+      for(let j=Math.max(i0+1,end0-9);j<=end0;j++)if(stop[j]!=null&&stop[j-1]!=null&&X0.c[j]<stop[j]&&X0.c[j-1]>=stop[j-1])
+        push(X0.ser[j],'risk','리스크','trail',[`스탑 ${fmtMoney(stop[j],h.ccy)}`,`보유 후 고점 대비 ${pcs(X0.c[j]/TA.hhv(X0.h,i0,j)-1)}`],X0.c[j],it.s.own)}});
+  return out}
+async function sgLogScan(force){const D=S.D,user=force||SGL.want;
+  if(!D||S.locked||!D.has.signal||!sgReady()||SGL.busy)return;
+  if(!user&&(!S.cfg.sigLog||Date.now()-SGL.at<10*60e3))return;
+  const U=sgUniverse('all');if(!U.length)return;
+  if(U.some(h=>sgSyms(h).list.some(x=>{const e=sgE(x);return !e||e.busy||!e.at}))){if(force){const all=new Set();U.forEach(x=>sgSyms(x).list.forEach(s=>all.add(s)));SGL.want=1;sgNeed([...all])}return}
+  SGL.busy=true;SGL.want=0;SGL.at=Date.now();
+  try{const ev=sigEvents().filter(r=>!D.sigKeys.has(r[0]));const added=ev.length?await Store.addSignals(ev):[];
+    added.forEach(({row,r})=>{const o=sigParse(r,row);D.signals.push(o);D.sigKeys.add(o.key)});SGL.n=added.length;SGL.last=Date.now();SGL.err='';
+    if(user)toast(added.length?`새 신호 ${added.length}건을 기록했습니다`:'새 신호가 없습니다')}
+  catch(e){SGL.err=e.message;if(user)toast('신호 기록 실패: '+e.message,3500)}
+  finally{SGL.busy=false;sgRepaint()}}
+function sigParse(r,row){const m=str(r[2]);return {row,key:str(r[0]),date:toSerial(r[1]),mkt:m==='미장'?'US':'KR',ticker:str(r[3]).toUpperCase(),name:str(r[4]),kind:str(r[5]),strat:str(r[6]),sig:str(r[7]),why:str(r[8]),px:num(r[9]),sym:str(r[10]),at:str(r[11]).replace(/^'/,'')}}
+// 기록된 신호 이후 수익률 (보유 종목 자체 시세, 없으면 기준 심볼)
+function sigOutcome(o,F){const own=ySym({mkt:o.mkt,ticker:o.ticker});let X=own&&sgX(own),src=own;if(!X&&o.sym){X=sgX(o.sym);src=o.sym}if(!X)return null;
+  const i0=TA.idxAt(X,o.date);if(i0<0||X.ser[i0]!==o.date)return {src,miss:1};const c0=X.c[i0],r=k=>i0+k<X.L?X.c[i0+k]/c0-1:null;
+  return {src,r5:r(5),rF:r(F),now:X.c[X.L-1]/c0-1,bars:X.L-1-i0}}
+const sigCls=o=>o.sig===SIGC.buy?'buy':o.sig===SIGC.trail?'blk':'sell';
+const sigWin=(o,v)=>v==null?null:o.sig===SIGC.buy?v>0:v<0;
+function vLog(){const D=S.D,P=spP(),F=P.fwd;
+  if(!D.has.signal)return `<section class="card"><h2>신호 기록</h2><div class="sm muted">전략 신호가 새로 켜질 때마다 날짜·가격·근거를 주식일지 파일의 ${APP.signal} 시트에 남기고, 이후 실제 수익률로 전략별 적중률을 보여줍니다. 먼저 시트를 만드세요.</div><button class="btn sm pri" style="margin-top:12px" data-act="createSheets" data-busy>앱 시트 만들기</button></section>`;
+  const lf=S.v.lf||'all',ld=S.v.ld||'all';
+  const all=D.signals.slice().sort((a,b)=>b.date-a.date||b.row-a.row);
+  const st=SGL.busy?'확인 중…':SGL.last?`${p2(new Date(SGL.last).getHours())}:${p2(new Date(SGL.last).getMinutes())} 확인 · 새 신호 ${SGL.n}건`:SGL.err?'확인 실패 · '+SGL.err:'아직 확인 전';
+  const head=`<section class="card"><div class="row sb" style="gap:10px"><div style="min-width:0"><div class="lbl">신호 기록 ${D.signals.length}건</div><div class="xs faint" style="margin-top:2px">${S.cfg.sigLog?'자동 기록 켜짐':'자동 기록 꺼짐'} · ${esc(st)}</div></div><button class="btn sm" data-act="sigScan" ${SGL.busy?'disabled':''}>지금 확인</button></div>
+    <div class="xs faint" style="margin-top:8px">앱을 열 때 보유·관심종목의 확정된 일봉(최근 10거래일)을 보고 새로 켜진 신호만 기록합니다. 장중의 마지막 봉은 제외합니다.</div></section>`;
+  // 전략별 실제 적중률 (평가 기간이 지난 신호만)
+  const grp={};all.forEach(o=>{const oc=sigOutcome(o,F);if(!oc||oc.rF==null)return;const k=o.strat+'|'+(o.sig===SIGC.buy?'b':'s');const g=grp[k]||(grp[k]={strat:o.strat,buy:o.sig===SIGC.buy,n:0,sum:0,win:0});g.n++;g.sum+=oc.rF;if(sigWin(o,oc.rF))g.win++});
+  const gs=Object.values(grp).sort((a,b)=>b.n-a.n);
+  const stats=gs.length?`<section class="card"><h2>전략별 실제 결과 <span class="xs faint">신호 후 ${F}거래일</span></h2><div class="scrollx"><table class="tbl"><thead><tr><th>전략</th><th>신호</th><th>건수</th><th>평균</th><th>적중</th></tr></thead><tbody>
+    ${gs.map(g=>`<tr><td>${esc(g.strat)}</td><td>${g.buy?'매수':'매도·경계'}</td><td class="num">${g.n}</td><td class="num ${cls(g.sum/g.n)}">${pcs(g.sum/g.n)}</td><td class="num">${Math.round(g.win/g.n*100)}%</td></tr>`).join('')}</tbody></table></div>
+    <div class="xs faint" style="margin-top:8px">적중 = 매수 신호 뒤 상승, 매도·경계 신호 뒤 하락. 건수가 적으면 우연일 수 있습니다.</div></section>`:all.length?`<div class="note">신호 후 ${F}거래일이 지난 기록이 쌓이면 전략별 실제 결과(평균 수익률·적중률)가 여기에 표시됩니다.</div>`:'';
+  const strats=[...new Set(all.map(o=>o.strat))];
+  const flt=all.filter(o=>(lf==='all'||o.strat===lf)&&(ld==='all'||(ld==='buy'?o.sig===SIGC.buy:o.sig!==SIGC.buy)));
+  const lim=+S.v.ln||40,list=flt.slice(0,lim);
+  const rows=list.map(o=>{const oc=sigOutcome(o,F),cur=o.mkt==='US'?'USD':'KRW',w=v=>v==null?'-':`<b class="${cls(v)}">${pcs(v)}</b>`;
+    const k=S.D.hold.find(h=>h.ticker===o.ticker&&h.active)||Object.values(D.wByKey).find(h=>h.ticker===o.ticker);
+    return `<${k?`button class="hrow" data-act="stock" data-key="${esc(k.key)}"`:'div class="hrow"'}><div class="hl"><div class="hn">${esc(o.name||o.ticker)} ${o.kind==='관심'?'<i class="badge">관심</i>':''}</div>
+      <div class="hs muted">${sToStr(o.date)} · ${esc(o.strat)}${o.px?` · ${fmtMoney(o.px,cur)}`:''}</div><div class="xs faint sgwhy">${esc(o.why)}</div>
+      <div class="xs muted" style="margin-top:3px">${oc?oc.miss?'시세에 신호일 없음':`5일 ${w(oc.r5)} · ${F}일 ${w(oc.rF)} · 지금까지 ${w(oc.now)}`:'이후 수익률 불러오는 중…'}</div></div>
+      <div class="hr"><span class="stp ${sigCls(o)}">${esc(o.sig)}</span></div></${k?'button':'div'}>`}).join('');
+  return head+stats+`<div style="margin-top:4px">${chips('lf',[['all','전체'],...strats.map(s=>[s,s])])}</div><div style="margin:8px 2px 0">${seg('ld',[['all','전체'],['buy','매수'],['sell','매도·경계·스탑']])}</div>
+   <section class="card" style="padding:4px 16px">${rows||'<div class="empty">기록된 신호가 없습니다</div>'}</section>
+   ${flt.length>lim?`<button class="btn block" data-act="set" data-k="ln" data-val="${lim+40}">더 보기 (${flt.length-lim}건)</button>`:''}`+SG_NOTE}
+function sigRecent(h){const D=S.D;if(!D.has.signal)return '';const F=spP().fwd,rs=D.signals.filter(o=>o.ticker===h.ticker).sort((a,b)=>b.date-a.date).slice(0,5);
+  if(!rs.length)return '';const w=v=>v==null?'-':`<b class="${cls(v)}">${pcs(v)}</b>`;
+  return `<div class="sect">최근 신호 기록</div>${rs.map(o=>{const oc=sigOutcome(o,F);return `<div class="psr"><div class="row sb"><span class="sm">${sToStr(o.date)} · ${esc(o.strat)}</span><span class="stp ${sigCls(o)}">${esc(o.sig)}</span></div>
+    <div class="xs muted">${oc&&!oc.miss?`5일 ${w(oc.r5)} · ${F}일 ${w(oc.rF)} · 지금까지 ${w(oc.now)}`:'-'}</div></div>`}).join('')}`}
 
 /* ================= 렌더 ================= */
 function render(){
@@ -1598,6 +1684,7 @@ function vSettings(){
   ${vFxSettings()}
   <section class="card"><h2>기능</h2>
    <div class="set"><div>자산 추이 자동 기록<div class="d">앱을 열 때 오늘 값을 App_자산추이에 저장</div></div>${sw('autoSnap')}</div>
+   <div class="set"><div>신호 자동 기록<div class="d">앱을 열 때 확정된 일봉 기준 새 전략 신호를 ${APP.signal}에 저장 (주가 차트 서버 필요)</div></div>${sw('sigLog')}</div>
    <div class="set"><div>주가 차트 서버<div class="d" style="word-break:break-all">${c.demo?'데모 모드는 가상 시세 사용':c.chartUrl?esc(c.chartUrl.replace(/^https:\/\//,'')):'미연결 · 종목 상세 차트용 Cloudflare Worker'}</div></div><button class="btn sm" data-act="chartUrlForm">${c.chartUrl?'변경':'연결'}</button></div>
    ${D?`<div class="set"><div>앱 전용 시트<div class="d">${APPK.map(k=>`${APP[k]} ${has[k]?'✓':'✗'}`).join(' · ')}</div></div>${APPK.some(k=>!has[k])?`<button class="btn sm pri" data-act="createSheets" data-busy>만들기</button>`:''}</div>`:''}</section>
   ${D?vCheck():''}
@@ -1857,6 +1944,7 @@ const A={
   rbReset(){S.rbw=null;render()},
   pxRange(el){S.v.cr=el.dataset.val;const h=curStock();if(h){pxPaint(h);pxEnsure(h)}},
   pxRetry(){const h=curStock();if(h)pxEnsure(h,true)},
+  sigScan(){sgLogScan(true);sgRepaint()},
   pxOv(el){const k=el.dataset.val,o=new Set(str(S.v.ov).split(',').filter(Boolean));o.has(k)?o.delete(k):o.add(k);S.v.ov=[...o].join(',');const h=curStock();if(h)pxPaint(h)},
   watchForm(){watchForm()},
   watchSave(){const v=fv($('#modal .sheet')),e=$('#wfErr');const t=str(v.ticker).toUpperCase().replace(/\s/g,'');
@@ -1951,7 +2039,8 @@ const Demo=(()=>{
       {id:105,title:APP.review,cells:[HDR.review,['국장|미래에너지|2026-08-11|매도|200|13400','국장','미래에너지',toSerial('2026-08-11'),'매도',200,13400,'익절','확신','계획한 목표가에서 전량 매도. 분할 매도도 고려할 만했음.',4,'2026-08-11 15:40'],['미장|SOXL|2026-09-10|매수|40|36.8','미장','SOXL',toSerial('2026-09-10'),'매수',40,36.8,'물타기,충동매매','불안','평단 낮추려 추가매수. 레버리지 비중이 계획보다 커짐.',2,'2026-09-10 23:20']]},
       {id:106,title:APP.snap,cells:[HDR.snap]},
       {id:107,title:APP.watch,cells:[HDR.watch,['KRX:900201','데모바이오','국장','실적 발표 후 진입 검토','2026-10-01'],['NASDAQ:AMD','AMD','미장','','2026-10-05']]},
-      {id:108,title:APP.outlook,cells:[HDR.outlook,...demoOutlook()]}]}};
+      {id:108,title:APP.outlook,cells:[HDR.outlook,...demoOutlook()]},
+      {id:109,title:APP.signal,cells:[HDR.signal]}]}};
     sheet('main','현금투자').flows=openFlows();
     // 자산추이 시드
     const s=summary();const today=toSerial(todayStr());let tot=s.TOT.total,pr=s.TOT.principal;const rows=[];let seed=7;const rnd=()=>{seed=(seed*16807)%2147483647;return seed/2147483647};
