@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-GTNufa07FyAQc0eT229Si/x3wfRKDXbBjQmP2SRVUaw=' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; connect-src https://sheets.googleapis.com https://www.googleapis.com https://oauth2.googleapis.com https://accounts.google.com/gsi/; frame-src https://accounts.google.com/gsi/; img-src 'self' data:; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-gdaPtqvH0xI+v1AcCkauRzcHI7TdVDoWiJjTXRb40gg=' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; connect-src https://sheets.googleapis.com https://www.googleapis.com https://oauth2.googleapis.com https://accounts.google.com/gsi/; frame-src https://accounts.google.com/gsi/; img-src 'self' data:; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
 <meta name="robots" content="noindex,nofollow">
 <meta name="theme-color" content="#0b0f17">
@@ -1121,7 +1121,7 @@ function reviewFields(r){
 function readReview(el){return {tags:$$('#rvTags .chip.on',el).map(b=>b.dataset.val),emo:($('#rvEmo .chip.on',el)||{}).dataset?.val||'',rating:$$('#rvStars button.on',el).length,text:str(($('[name=rvText]',el)||{}).value)}}
 function tfData(el){
   const v=fv(el);const h=S.D.byKey[TF.key];const q=num(v.qty),p=num(v.price),f=num(v.fee);
-  return {h,t:{date:toSerial(v.date),type:TF.type,qty:TF.type==='매도'?-Math.abs(q):Math.abs(q),price:p,fee:f,acc:str(v.acc),memo:str(v.memo)},q,p,f,v};
+  return {h,t:{date:toSerial(v.date),type:TF.type,qty:Math.abs(q),price:p,fee:f,acc:str(v.acc),memo:str(v.memo)},q,p,f,v};
 }
 function tfAutoFee(el,force){
   el=el||$('#modal .sheet');if(!el||!TF)return;if(TF.feeManual&&!force)return;
