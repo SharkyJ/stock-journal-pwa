@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-6bdq3SubyakEH+CYw0zQK/fPr/W+KsIiw0LMs9HM+K8=' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; connect-src https://sheets.googleapis.com https://www.googleapis.com https://oauth2.googleapis.com https://accounts.google.com/gsi/ https://*.workers.dev; frame-src https://accounts.google.com/gsi/; img-src 'self' data:; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-FPcBXBqFfhyrHwMN18k56VJxqYjqNApFrOn7Nnp/WMA=' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; connect-src https://sheets.googleapis.com https://www.googleapis.com https://oauth2.googleapis.com https://accounts.google.com/gsi/ https://*.workers.dev; frame-src https://accounts.google.com/gsi/; img-src 'self' data:; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
 <meta name="robots" content="noindex,nofollow">
 <meta name="theme-color" content="#0b0f17">
@@ -226,7 +226,7 @@ code{background:var(--bg2);padding:1px 5px;border-radius:5px;font-size:12.5px}
 <script>
 'use strict';
 /* ================= 상수 / 유틸 ================= */
-const VERSION='1.4.0';
+const VERSION='1.4.1';
 const SH='https://sheets.googleapis.com/v4/spreadsheets';
 const SHEETS_SCOPE='https://www.googleapis.com/auth/spreadsheets';
 const SCOPES=SHEETS_SCOPE+' openid email';
@@ -1014,8 +1014,11 @@ async function fundFetch(sym){
   try{const res=await fetch(`${S.cfg.chartUrl}/fund?s=${encodeURIComponent(sym)}`,{signal:ctl.signal,credentials:'omit',referrerPolicy:'no-referrer',cache:'no-store'});
     const j=await res.json().catch(()=>null);if(!res.ok||!j||j.error)throw new Error((j&&j.error)||'HTTP '+res.status);return j}
   catch(e){throw new Error(e.name==='AbortError'?'응답 시간 초과':e.message==='Failed to fetch'?'차트 서버에 연결할 수 없습니다':e.message)}finally{clearTimeout(to)}}
-function fundNeed(sym){if(!sym)return;const o=SG.fund[sym]||(SG.fund[sym]={});if(o.busy||o.at&&Date.now()-o.at<(o.err?600e3:6*3600e3))return;o.busy=1;
-  sgQueue('F|'+sym,()=>fundFetch(sym).then(f=>{o.f=f;o.err=''},x=>{o.err=x.message}).finally(()=>{o.busy=0;o.at=Date.now()}))}
+// 재무는 한 번에 하나씩 요청 (동시에 보내면 Worker 인스턴스마다 Yahoo crumb을 따로 받다가 429로 막힘)
+// 지난 자료(stale)·대체 자료(warn)를 받았으면 30분 뒤 다시 시도
+let FQ=Promise.resolve();
+function fundNeed(sym){if(!sym)return;const o=SG.fund[sym]||(SG.fund[sym]={});if(o.busy||o.at&&Date.now()-o.at<(o.err?600e3:o.f&&(o.f.stale||o.f.warn)?1800e3:6*3600e3))return;o.busy=1;
+  FQ=FQ.then(()=>fundFetch(sym).then(f=>{o.f=f;o.err=''},x=>{o.err=x.message})).finally(()=>{o.busy=0;o.at=Date.now();sgRepaint()})}
 const sgReady=()=>S.cfg.demo||chartUrlOk(S.cfg.chartUrl);
 // 화면에 필요한 시세를 요청 (render 직후·15초 간격)
 function sgAuto(){if(!S.D||S.locked||!sgReady())return;
@@ -1180,7 +1183,9 @@ function fundBlock(h,x){if(x.s.u)return `<div class="sect">재무·컨센서스<
   const kv=[['포워드 PER',f.fper!=null?n(f.fper)+'배':'-'],['실적 PER',f.per!=null?n(f.per)+'배':'-'],['PBR',f.pbr!=null?n(f.pbr,2)+'배':'-'],['EPS → 추정',f.eps!=null||f.feps!=null?`${n(f.eps,cc==='USD'?2:0)} → ${n(f.feps,cc==='USD'?2:0)}${eg!=null?` (${pcs(eg)})`:''}`:'-'],
     ['목표주가 평균',f.tgt?`${fmtMoney(f.tgt,cc)} (${pcs(up)})`:'-'],['목표주가 범위',f.tgtLo&&f.tgtHi?`${fmtMoney(f.tgtLo,cc)} ~ ${fmtMoney(f.tgtHi,cc)}`:'-'],['투자의견',f.rec!=null?`${REC(f.rec)} (${n(f.rec,2)}/5)${f.nAn?` · ${f.nAn}명`:''}`:'-'],
     ['ROE',p(f.roe)],['배당수익률',p(f.divy)],['베타',n(f.beta,2)],['PEG',n(f.peg,2)],['매출 성장률',p(f.revG)],['다음 실적 발표',f.earn?sToStr(Math.floor(f.earn/86400)+25569):'-']].filter(([,v])=>v!=='-');
-  return `<div class="sect">재무·컨센서스 <span class="xs faint">${f.src==='naver'?'네이버 증권':f.src==='yahoo'?'Yahoo Finance':f.src==='demo'?'데모':''}</span></div>${kv.length?`<div class="kvg">${kv.map(([k,v])=>`<div><span>${k}</span><b class="num">${v}</b></div>`).join('')}</div>`:'<div class="xs faint">표시할 재무지표가 없습니다.</div>'}`}
+  const ago=f.at?Math.max(0,Date.now()/1000-f.at):0,agoS=ago<3600?Math.max(1,Math.round(ago/60))+'분':ago<86400?Math.round(ago/3600)+'시간':Math.round(ago/86400)+'일';
+  const note=f.stale?`최신 조회에 실패해 ${agoS} 전 자료를 보여줍니다.`:f.warn&&f.src==='naver'?'Yahoo 조회에 실패해 네이버 해외주식 자료를 보여줍니다. 포워드 PER·목표주가가 빠질 수 있습니다.':'';
+  return `<div class="sect">재무·컨센서스 <span class="xs faint">${f.src==='naver'?'네이버 증권':f.src==='yahoo'?'Yahoo Finance':f.src==='demo'?'데모':''}</span></div>${kv.length?`<div class="kvg">${kv.map(([k,v])=>`<div><span>${k}</span><b class="num">${v}</b></div>`).join('')}</div>`:'<div class="xs faint">표시할 재무지표가 없습니다.</div>'}${note?`<div class="xs faint" style="margin-top:6px">${esc(note)}</div>`:''}`}
 
 /* ================= 관심종목 · 전략 설정 ================= */
 function vWatchStock(h){const it=sgItem(h),X0=it.X0,px=X0?X0.c[X0.L-1]:0,pc=X0&&X0.L>1?px/X0.c[X0.L-2]-1:null;

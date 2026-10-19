@@ -6,3 +6,9 @@ workers_dev = true
 [vars]
 # 앱 주소(쉼표 구분). 포크했거나 다른 주소에서 쓰면 바꾸세요.
 ALLOWED_ORIGINS = "https://sharkyj.github.io,http://localhost:8000"
+
+# 선택(권장): 재무 자료·Yahoo crumb 캐시용 KV. 대시보드에서 Bindings로 연결해도 됩니다(변수 이름 CACHE).
+# npx wrangler kv namespace create sj-chart-cache 로 만든 뒤 나온 id를 넣고 주석을 푸세요.
+# [[kv_namespaces]]
+# binding = "CACHE"
+# id = "<KV 네임스페이스 ID>"
