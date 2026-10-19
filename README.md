@@ -60,9 +60,18 @@ URL 자체도 숨기고 싶다면 Cloudflare Pages + Cloudflare Access(이메일
 3. 앱 주소가 `https://sharkyj.github.io`가 아니면 **Settings → Variables → ALLOWED_ORIGINS**에 앱 주소(쉼표로 여러 개)를 넣기
 4. 표시된 주소(`https://sj-chart.<계정>.workers.dev`)를 복사 → 앱 **설정 → 기능 → 주가 차트 서버 → 연결**에 붙여넣고 *연결 테스트* → 저장
 
-**CLI로 배포**: `cd worker && npx wrangler deploy` (`wrangler.toml`의 ALLOWED_ORIGINS 확인)
+**재무 캐시용 KV 연결 (권장, 약 3분)** — 미장 재무가 `crumb 429`로 자주 막히면 꼭 하세요
+1. 대시보드 **Storage & Databases → KV → Create** → 이름 `sj-chart-cache`
+2. **Workers & Pages → sj-chart → Settings → Bindings → Add → KV namespace** → Variable name `CACHE`, 방금 만든 네임스페이스 선택 → Deploy
+3. 확인: 브라우저 주소창에 `https://sj-chart.<계정>.workers.dev/fund?s=MU&diag=1` → `"kv":true`
+
+무료 플랜 Worker는 요청마다 새 인스턴스로 뜨는 일이 잦아 메모리 캐시가 거의 유지되지 않습니다. 그러면 열 때마다 Yahoo crumb을 새로 받으려다 429(요청 과다)로 막힙니다. KV가 있으면 crumb(6시간)과 재무 자료(6시간, 실패 시 최대 7일 전 자료로 대체)를 인스턴스끼리 나눠 씁니다. 무료 한도(읽기 일 10만·쓰기 일 1천)에 비해 사용량은 아주 작습니다.
+
+**CLI로 배포**: `cd worker && npx wrangler deploy` (`wrangler.toml`의 ALLOWED_ORIGINS·KV 주석 확인)
 
 - 엔드포인트: `/chart?s=심볼&r=기간` (1d·5d 분봉, 1mo·3mo·1y 일봉, 5y 주봉, 2y·5yd 지표·적중률용 일봉), `/fund?s=심볼` (재무·컨센서스 — 국장은 네이버 증권 추정 PER·EPS·목표주가·투자의견, 미장은 Yahoo 포워드 PER·목표주가 등, 6시간 캐시). 둘 다 비공식 API라 형식이 바뀌면 이 파일만 고치면 됩니다
+- 미장 재무가 막힐 때: Yahoo가 429를 주면 30분간 Yahoo 재무 호출을 쉬고, 그동안 마지막 Yahoo 자료(최대 7일)를 보여주며 그것도 없으면 네이버 해외주식 자료(실적 PER·EPS·PBR·배당수익률)로 대신합니다. 앱 카드 아래에 어떤 자료인지 표시됩니다
+- 진단: `/fund?s=심볼&diag=1` — 소스별 성공 여부·받은 값·캐시·대기 시간을 보여줍니다(캐시는 바꾸지 않음)
 - 티커 변환: `KRX:005930` → `005930.KS`(코스피, 못 찾으면 Worker가 `.KQ` 코스닥으로 재시도), `KOSDAQ:035720` → `035720.KQ`, `NASDAQ:MU` → `MU`, `NYSE:BRK.B` → `BRK-B`
 - 갱신: 차트를 보고 있는 동안 장중 1분, 장 마감 후 10분(분봉) 간격. Worker도 30초~30분 캐시
 - 무료 플랜 한도(일 10만 요청)와 비교하면 개인 사용량은 매우 작습니다
