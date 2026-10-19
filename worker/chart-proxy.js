@@ -32,7 +32,7 @@ const FUND_FRESH = 6 * 3600;      // 재무 자료를 새로 받지 않고 쓰�
 const FUND_FALLBACK = 3600;       // 네이버 해외주식 대체 자료는 1시간 뒤 Yahoo를 다시 시도
 const FUND_KEEP = 7 * 86400;      // 조회 실패 시 대신 보여줄 수 있는 지난 자료의 보관 기간
 const COOL_MS = 30 * 60e3;        // Yahoo가 429를 주면 이 시간 동안 Yahoo 재무 호출을 쉼
-const FK = 'f2:';                 // 재무 캐시 키 접두어 (응답 형식이 바뀌면 올려서 옛 캐시를 버림)
+const FK = 'f3:';                 // 재무 캐시 키 접두어 (응답 형식이 바뀌면 올려서 옛 캐시를 버림)
 let YC = null;         // Yahoo 쿠키·crumb (quoteSummary용)
 let YCP = null;        // 진행 중인 crumb 발급 (동시 요청이 각자 발급받지 않게 공유)
 let YCOOL = 0;         // 이 시각(ms)까지 Yahoo 재무 호출 안 함
@@ -133,7 +133,8 @@ async function chart(s, r) {
 //   stale true = 최신 조회에 실패해 지난 자료를 보낸 것, warn = 실패 사유
 //   px 현재가(있으면), fy 회계연도별 추정 EPS [{p:'0y'|'+1y', end:'YYYY-MM-DD', eps, n, cur, d7, d30, d60, d90, up7, up30, dn7, dn30}]
 //   ntmW 올해 회계연도 비중(0~1), ntmEps 12개월 선행 EPS = ntmW×올해 + (1−ntmW)×내년, ntmPer = px ÷ ntmEps
-//   rev 추정치 변화(미장): {r7, r30, r90 = 12개월 선행 EPS의 7/30/90일 전 대비 변화율, up30, dn30 = 30일간 상향·하향 애널리스트 수}
+//   fySrc 'yahoo' = 국장인데 fy·rev를 Yahoo로 채운 경우
+//   rev 추정치 변화: {r7, r30, r90 = 12개월 선행 EPS의 7/30/90일 전 대비 변화율, up30, dn30 = 30일간 상향·하향 애널리스트 수}
 const blank = s => ({ s, src: '', type: '', name: '', ccy: '', px: null, per: null, fper: null, eps: null, feps: null, pbr: null, peg: null, roe: null, divy: null, beta: null, tgt: null, tgtHi: null, tgtLo: null, nAn: null, rec: null, revG: null, epsG: null, earn: null, fy: null, ntmW: null, ntmEps: null, ntmPer: null, rev: null, at: Math.floor(Date.now() / 1000) });
 
 // 12개월 선행(NTM): 올해 회계연도가 남은 비율만큼 올해 추정 EPS, 나머지는 내년 추정 EPS
@@ -198,7 +199,7 @@ async function fundRoute(s, env, ctx) {
   let nErr = null;
   if (kr) {
     const n = await naverKr(s).catch(e => { nErr = '네이버 ' + e.message; return null; });
-    if (n) return save(n, FUND_FRESH);
+    if (n) { const ok = await addYahooTrend(n, s, env); return save(n, ok ? FUND_FRESH : FUND_FALLBACK); }
   }
   const y = await yahooSummary(s, env).catch(e => ({ error: e.message }));
   if (!y.error) return save(y, FUND_FRESH);
@@ -238,6 +239,20 @@ async function naverKr(s) {
   if (out.per > 0 && out.eps > 0) out.px = Math.round(out.per * out.eps); // 현재가 근사 (PER × EPS)
   out.fy = await naverAnnual(code).catch(() => null);
   return applyNtm(out);
+}
+
+// 국장 보충: 네이버 연간 재무는 추정치가 올해 한 해뿐이라, 올해·내년 추정 EPS와 추정치 변화는 Yahoo earningsTrend로 채움
+// (PER·포워드 PER·목표주가·투자의견은 네이버 그대로). 코스닥 종목이 .KS로 오면 .KQ로 한 번 더. 반환: 다시 시도할 필요가 없으면 true
+async function addYahooTrend(n, s, env) {
+  if (n.fy && n.fy.length >= 2) return true;
+  let y = await yahooSummary(s, env).catch(e => ({ error: e.message }));
+  if (y.notFound && s.endsWith('.KS')) y = await yahooSummary(s.slice(0, -3) + '.KQ', env).catch(e => ({ error: e.message }));
+  if (y.error) return !!y.notFound; // 차단·오류면 1시간 뒤 다시 시도
+  if (!y.fy || y.fy.length < 2) return true;
+  Object.assign(n, { fy: y.fy, rev: y.rev, fySrc: 'yahoo', ntmW: null, ntmEps: null, ntmPer: null });
+  if (y.px > 0) n.px = y.px;
+  applyNtm(n);
+  return true;
 }
 
 // 네이버 연간 재무(추정치 포함): financeInfo.trTitleList[{key, title:'2026.12.', isConsensus:'Y'}] + rowList[{title:'EPS', columns:{key:{value}}}]
@@ -438,7 +453,9 @@ async function diagnose(s, env) {
   };
   out.yahoo = brief(await yahooSummary(s, env).catch(e => ({ error: e.message })));
   if (isKr(s)) {
-    out.naver = brief(await naverKr(s).catch(e => ({ error: e.message })));
+    const n = await naverKr(s).catch(e => ({ error: e.message }));
+    out.naver = brief(n);
+    if (n && !n.error) { const m = { ...n }; await addYahooTrend(m, s, env); out.merged = brief(m); }
     out.naverAnnual = await naverAnnual(s.slice(0, 6), true).catch(e => ({ error: e.message }));
   }
   else out.naverUs = brief(await naverUs(s, true).catch(e => ({ error: e.message })));
