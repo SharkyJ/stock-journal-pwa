@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-pbHrWea5kUDPOx+WCZm7eAJMwZinUuLfTGBycSbL5KY=' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; connect-src https://sheets.googleapis.com https://www.googleapis.com https://oauth2.googleapis.com https://accounts.google.com/gsi/ https://*.workers.dev; frame-src https://accounts.google.com/gsi/; img-src 'self' data:; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-a1T5g35FCDkd0X/4SF7/j02oWTUUKqcNY9IvS/JaoC0=' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; connect-src https://sheets.googleapis.com https://www.googleapis.com https://oauth2.googleapis.com https://accounts.google.com/gsi/ https://*.workers.dev; frame-src https://accounts.google.com/gsi/; img-src 'self' data:; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
 <meta name="robots" content="noindex,nofollow">
 <meta name="theme-color" content="#0b0f17">
@@ -226,7 +226,7 @@ code{background:var(--bg2);padding:1px 5px;border-radius:5px;font-size:12.5px}
 <script>
 'use strict';
 /* ================= 상수 / 유틸 ================= */
-const VERSION='1.5.0';
+const VERSION='1.5.1';
 const SH='https://sheets.googleapis.com/v4/spreadsheets';
 const SHEETS_SCOPE='https://www.googleapis.com/auth/spreadsheets';
 const SCOPES=SHEETS_SCOPE+' openid email';
@@ -1205,7 +1205,8 @@ function fundBlock(h,x){if(x.s.u)return `<div class="sect">재무·컨센서스<
     ['ROE',p(f.roe)],['배당수익률',p(f.divy)],['베타',n(f.beta,2)],['PEG',n(f.peg,2)],['매출 성장률',p(f.revG)],['다음 실적 발표',f.earn?sToStr(Math.floor(f.earn/86400)+25569):'-']].filter(([,v])=>v!=='-');
   const ago=f.at?Math.max(0,Date.now()/1000-f.at):0,agoS=ago<3600?Math.max(1,Math.round(ago/60))+'분':ago<86400?Math.round(ago/3600)+'시간':Math.round(ago/86400)+'일';
   const note=[f.stale?`최신 조회에 실패해 ${agoS} 전 자료를 보여줍니다.`:f.warn&&f.src==='naver'?'Yahoo 조회에 실패해 네이버 해외주식 자료를 보여줍니다. 포워드 PER·목표주가가 빠질 수 있습니다.':'',
-    ntm>0?`12개월 선행 PER = 현재가 ÷ (올해 추정 EPS ${Math.round((f.ntmW||0)*100)}% + 내년 ${100-Math.round((f.ntmW||0)*100)}%). 포워드 PER은 제공처 기준이라 연도가 다를 수 있습니다.`:'',
+    ntm>0?`12개월 선행 PER = 현재가 ÷ (올해 추정 EPS ${Math.round((f.ntmW||0)*100)}% + 내년 ${100-Math.round((f.ntmW||0)*100)}%).${f.src==='yahoo'?' 포워드 PER은 Yahoo 기준이라 내년 회계연도 추정치로 계산됩니다.':f.src==='naver'?' 포워드 PER은 네이버 기준 올해 추정치입니다.':''}`:'',
+    f.fySrc==='yahoo'?'올해·내년 추정 EPS와 추정치 변화는 Yahoo 컨센서스, 나머지는 네이버 증권 자료입니다.':'',
     !S.D.has.fin?`설정 → 앱 전용 시트에서 ${APP.fin}를 만들면 매일 기록해 선행 PER 1년 위치를 보여줍니다.`:''].filter(Boolean);
   return `<div class="sect">재무·컨센서스 <span class="xs faint">${f.src==='naver'?'네이버 증권':f.src==='yahoo'?'Yahoo Finance':f.src==='demo'?'데모':''}</span></div>${kv.length?`<div class="kvg">${kv.map(([k,v])=>`<div><span>${k}</span><b class="num">${v}</b></div>`).join('')}</div>`:'<div class="xs faint">표시할 재무지표가 없습니다.</div>'}${note.map(t=>`<div class="xs faint" style="margin-top:6px">${esc(t)}</div>`).join('')}`}
 
