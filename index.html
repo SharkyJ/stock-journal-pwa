@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-a1T5g35FCDkd0X/4SF7/j02oWTUUKqcNY9IvS/JaoC0=' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; connect-src https://sheets.googleapis.com https://www.googleapis.com https://oauth2.googleapis.com https://accounts.google.com/gsi/ https://*.workers.dev; frame-src https://accounts.google.com/gsi/; img-src 'self' data:; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-LPYTqIXhnJzC8GrsU6zmSHA6iwl2i6hPpU/e2j978LI=' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; connect-src https://sheets.googleapis.com https://www.googleapis.com https://oauth2.googleapis.com https://accounts.google.com/gsi/ https://*.workers.dev; frame-src https://accounts.google.com/gsi/; img-src 'self' data:; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
 <meta name="robots" content="noindex,nofollow">
 <meta name="theme-color" content="#0b0f17">
@@ -105,6 +105,7 @@ header.top h1 small{font-size:12px;font-weight:500;color:var(--tx3);white-space:
 .fld textarea{height:auto;min-height:76px;padding:10px 12px;resize:vertical}
 .fld input:focus,.fld select:focus,.fld textarea:focus{border-color:var(--ac)}
 .fld .hint{font-size:11.5px;color:var(--tx3);margin-top:4px}
+.tkrow{display:flex;gap:8px}.fld .tkrow select{width:124px;flex:0 0 124px}.fld .tkrow input{flex:1;min-width:0;text-transform:uppercase}
 .f2{display:grid;grid-template-columns:1fr 1fr;gap:0 10px}
 .f3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:0 8px}
 .inl{display:flex;gap:6px}.inl input{flex:1}
@@ -226,7 +227,7 @@ code{background:var(--bg2);padding:1px 5px;border-radius:5px;font-size:12.5px}
 <script>
 'use strict';
 /* ================= 상수 / 유틸 ================= */
-const VERSION='1.5.1';
+const VERSION='1.5.2';
 const SH='https://sheets.googleapis.com/v4/spreadsheets';
 const SHEETS_SCOPE='https://www.googleapis.com/auth/spreadsheets';
 const SCOPES=SHEETS_SCOPE+' openid email';
@@ -1224,7 +1225,7 @@ function watchForm(){const D=S.D;
   openModal(`<h3>관심종목</h3>
    ${D.watch.length?`<div style="margin:-4px 0 12px">${D.watch.map(w=>`<div class="set"><div style="min-width:0">${esc(w.name||w.ticker)} <i class="badge ${w.mkt==='KR'?'kr':'us'}">${MKL[w.mkt]}</i><div class="d">${esc(w.ticker)}${w.memo?' · '+esc(w.memo):''}</div></div><button class="btn sm danger" data-act="watchDel" data-t="${esc(w.ticker)}">삭제</button></div>`).join('')}</div>`:'<div class="empty" style="padding:8px 0 16px">관심종목이 없습니다</div>'}
    <div class="sect" style="margin-top:0">추가</div>
-   <label class="fld"><span>티커 (GOOGLEFINANCE 형식)</span><input name="ticker" placeholder="KRX:005380 · NASDAQ:AMD · NYSE:TSM" autocapitalize="characters" autocomplete="off" spellcheck="false"></label>
+   ${tkField(['KRX','NASDAQ','NYSE'],'KRX')}
    <label class="fld"><span>종목명</span><input name="name" placeholder="현대차"></label>
    <label class="fld"><span>메모 (선택)</span><input name="memo"></label>
    <div class="err" id="wfErr"></div>
@@ -1932,12 +1933,24 @@ function ffCalc(src){
   if(S.ff.last==='usd'){const u=num(q('usd').value);if(u)q('krw').value=Math.round(u*fx)}
   else{const k=num(q('krw').value);if(k)q('usd').value=(Math.round(k/fx*100)/100).toFixed(2)}
 }
+// 티커 입력: 거래소 셀렉트 + 코드. 기타는 거래소:코드 전체 입력(NYSEARCA:SOXL 등)
+const TKX={KR:['KRX'],US:['NASDAQ','NYSE']},TKPH={KRX:'005380',NASDAQ:'AMD',NYSE:'TSM','':'NYSEARCA:SOXL'};
+function tkField(list,def){
+  return `<div class="fld" data-tk><span>티커</span><div class="tkrow"><select name="exch" aria-label="거래소">${list.map(x=>`<option value="${x}" ${x===def?'selected':''}>${x}</option>`).join('')}<option value="">직접 입력</option></select>
+   <input name="code" maxlength="30" placeholder="${TKPH[def]}" autocapitalize="characters" autocomplete="off" spellcheck="false" aria-label="종목 코드"></div><div class="hint" data-tkh>${tkHintText(def,'')}</div></div>`}
+function tkVal(v){const c=str(v.code).toUpperCase().replace(/\s/g,'');if(!c)return '';return c.includes(':')||!v.exch?c:v.exch+':'+c}
+function tkHintText(ex,t){return t?`저장 형식: ${esc(t)}`:ex==='KRX'?'6자리 종목코드 (예: 005380, ETF 0193T0)':ex?'종목 기호 (예: '+TKPH[ex]+')':'거래소:코드 전체 입력 (예: NYSEARCA:SOXL, KOSDAQ:035720)'}
+function tkSync(box){const ex=$('[name=exch]',box).value,ci=$('[name=code]',box);ci.placeholder=TKPH[ex];$('[data-tkh]',box).innerHTML=tkHintText(ex,tkVal({exch:ex,code:ci.value}))}
+function tkCheck(v){const t=tkVal(v);if(!t)return[t,'티커(종목 코드)를 입력하세요'];
+  if(!/^[A-Z]+:[A-Z0-9.\-]+$/.test(t))return[t,'티커는 거래소:코드 형식입니다 (예: KRX:005380, NASDAQ:AMD)'];
+  if(/^KRX:/.test(t)&&!/^KRX:[0-9A-Z]{6}$/.test(t))return[t,'KRX 코드는 6자리입니다 (예: 005380, 0193T0)'];
+  return[t,'']}
 function newTickerForm(m){
   openModal(`<h3>새 종목 탭 추가</h3><div style="margin-bottom:12px">${['KR','US'].map(x=>`<button class="chip ${m===x?'on':''}" data-act="ntMkt" data-val="${x}">${MKL[x]}_주식일지</button>`).join(' ')}</div>
    <input type="hidden" name="mkt" value="${m}">
    <label class="fld"><span>탭 이름 (짧은 이름)</span><input name="tab" maxlength="40" placeholder="${m==='KR'?'예: 현대차':'예: AAPL'}"></label>
    <label class="fld"><span>종목명</span><input name="name" maxlength="80" placeholder="${m==='KR'?'예: 현대자동차':'예: Apple'}"></label>
-   <label class="fld"><span>티커 (GOOGLEFINANCE 형식)</span><input name="ticker" maxlength="30" placeholder="${m==='KR'?'KRX:005380':'NASDAQ:AAPL'}" autocapitalize="characters"><div class="hint">거래소:코드 — 국장 KRX:000000, 미장 NASDAQ:/NYSE:/NYSEARCA:</div></label>
+   ${tkField(TKX[m],TKX[m][0])}
    <label class="fld"><span>현재가 대체값 (GOOGLEFINANCE 실패 시)</span><input name="fallback" inputmode="decimal" value="0"></label>
    <div class="note">기존 종목 탭을 복제해 서식·수식을 유지하고, 거래 입력칸을 비운 뒤 종목목록에 추가합니다. 기존 탭은 변경하지 않습니다.</div><div class="err" id="ntErr"></div>
    <div class="btns"><button class="btn" data-act="closeModal">취소</button><button class="btn pri" data-act="ntSave" data-busy>탭 만들기</button></div>`);
@@ -2015,9 +2028,10 @@ const A={
   newTicker(el){newTickerForm(el.dataset.mkt||'KR')},
   ntMkt(el){newTickerForm(el.dataset.val)},
   ntSave(){const el=$('#modal .sheet');const v=fv(el);const m=v.mkt;const err=$('#ntErr');
-    const o={tab:str(v.tab),name:str(v.name)||str(v.tab),ticker:str(v.ticker).toUpperCase().replace(/\s/g,''),fallback:num(v.fallback)};
+    const [tk,tkErr]=tkCheck(v);const o={tab:str(v.tab),name:str(v.name)||str(v.tab),ticker:tk,fallback:num(v.fallback)};
     if(!o.tab)return err.textContent='탭 이름을 입력하세요';if(/[\[\]\*\?\/\\:']/.test(o.tab))return err.textContent="탭 이름에 [ ] * ? / \\ : ' 는 쓸 수 없습니다";
-    if(o.tab==='종목목록')return err.textContent='사용할 수 없는 이름입니다';if(!/^[A-Z]+:[A-Z0-9.\-]+$/.test(o.ticker))return err.textContent='티커는 거래소:코드 형식이어야 합니다';
+    if(o.tab==='종목목록')return err.textContent='사용할 수 없는 이름입니다';if(tkErr)return err.textContent=tkErr;
+    if((m==='KR')!==/^(KRX|KOSDAQ|KOSPI):/.test(o.ticker))return err.textContent=m==='KR'?'국장 탭에는 KRX 티커를 입력하세요':'미장 탭에는 미국 거래소 티커를 입력하세요';
     run(async()=>{await Store.newTicker(m,o);closeModal();S.v.stock=MKL[m]+'_'+o.tab},`${o.tab} 탭을 만들었습니다`)},
   async createSheets(){const miss=APPK.filter(k=>!S.D.has[k]);if(!miss.length)return toast('이미 모두 있습니다');
     if(!(await confirmBox('앱 시트 만들기',`주식일지 파일에 다음 시트를 새로 추가합니다(헤더만 작성):\n${miss.map(k=>'· '+APP[k]).join('\n')}\n\n기존 시트와 데이터는 변경하지 않습니다.`,'추가')))return;
@@ -2032,8 +2046,8 @@ const A={
   sigScan(){sgLogScan(true);sgRepaint()},
   pxOv(el){const k=el.dataset.val,o=new Set(str(S.v.ov).split(',').filter(Boolean));o.has(k)?o.delete(k):o.add(k);S.v.ov=[...o].join(',');const h=curStock();if(h)pxPaint(h)},
   watchForm(){watchForm()},
-  watchSave(){const v=fv($('#modal .sheet')),e=$('#wfErr');const t=str(v.ticker).toUpperCase().replace(/\s/g,'');
-    if(!/^[A-Z]+:[A-Z0-9.\-]+$/.test(t))return e.textContent='티커는 거래소:코드 형식입니다 (예: KRX:005380, NASDAQ:AMD)';
+  watchSave(){const v=fv($('#modal .sheet')),e=$('#wfErr');const [t,tkErr]=tkCheck(v);
+    if(tkErr)return e.textContent=tkErr;
     if(S.D.watch.some(w=>w.ticker===t))return e.textContent='이미 있는 종목입니다';
     if(S.D.hold.some(h=>h.active&&h.ticker===t))return e.textContent='이미 보유 중인 종목입니다 (신호판에 자동 포함)';
     const m=/^(KRX|KOSDAQ|KOSPI):/.test(t)?'KR':'US';
@@ -2068,10 +2082,12 @@ document.addEventListener('input',e=>{
   const box=t.closest('[data-calc]');if(box)calcRun(box);
   if(t.matches('[data-rbw]')){S.rbw=S.rbw||{};S.rbw[t.dataset.rbw]=num(t.value)}
   if(t.matches('[data-ff]'))ffCalc(t.name);
+  {const tb=t.closest('[data-tk]');if(tb)tkSync(tb)}
 });
 document.addEventListener('change',e=>{
   const t=e.target;
   if(t.matches('[data-tf][name=key]')){if(t.value==='__new'){newTickerForm(TF.mkt);return}TF.key=t.value;const h=S.D.byKey[t.value];const el=$('#modal .sheet');if(h&&!TF.edit){$('[name=price]',el).value=h.price;const la=h.trades.length?h.trades[h.trades.length-1].acc:'';if(la)$('[name=acc]',el).value=la}tfAutoFee();tfPreview();return}
+  if(t.matches('[data-tk] [name=exch]')){const tb=t.closest('[data-tk]');tkSync(tb);$('[name=code]',tb).focus();return}
   if(t.matches('[data-pick]')){S.v.tk=t.value;render();return}
   if(t.matches('[data-rbw]')){render();return}
   if(t.matches('[data-ffacc]')){ffCalc('acc');return}
