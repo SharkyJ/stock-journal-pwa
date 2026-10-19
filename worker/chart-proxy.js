@@ -32,6 +32,7 @@ const FUND_FRESH = 6 * 3600;      // 재무 자료를 새로 받지 않고 쓰�
 const FUND_FALLBACK = 3600;       // 네이버 해외주식 대체 자료는 1시간 뒤 Yahoo를 다시 시도
 const FUND_KEEP = 7 * 86400;      // 조회 실패 시 대신 보여줄 수 있는 지난 자료의 보관 기간
 const COOL_MS = 30 * 60e3;        // Yahoo가 429를 주면 이 시간 동안 Yahoo 재무 호출을 쉼
+const FK = 'f2:';                 // 재무 캐시 키 접두어 (응답 형식이 바뀌면 올려서 옛 캐시를 버림)
 let YC = null;         // Yahoo 쿠키·crumb (quoteSummary용)
 let YCP = null;        // 진행 중인 crumb 발급 (동시 요청이 각자 발급받지 않게 공유)
 let YCOOL = 0;         // 이 시각(ms)까지 Yahoo 재무 호출 안 함
@@ -130,7 +131,34 @@ async function chart(s, r) {
 //   tgt/tgtHi/tgtLo 목표주가, nAn 애널리스트 수, rec 투자의견(5=강력매수 … 1=매도), revG/epsG 성장률(비율),
 //   earn 다음 실적 발표(epoch 초), type EQUITY|ETF|…, name, ccy, src
 //   stale true = 최신 조회에 실패해 지난 자료를 보낸 것, warn = 실패 사유
-const blank = s => ({ s, src: '', type: '', name: '', ccy: '', per: null, fper: null, eps: null, feps: null, pbr: null, peg: null, roe: null, divy: null, beta: null, tgt: null, tgtHi: null, tgtLo: null, nAn: null, rec: null, revG: null, epsG: null, earn: null, at: Math.floor(Date.now() / 1000) });
+//   px 현재가(있으면), fy 회계연도별 추정 EPS [{p:'0y'|'+1y', end:'YYYY-MM-DD', eps, n, cur, d7, d30, d60, d90, up7, up30, dn7, dn30}]
+//   ntmW 올해 회계연도 비중(0~1), ntmEps 12개월 선행 EPS = ntmW×올해 + (1−ntmW)×내년, ntmPer = px ÷ ntmEps
+//   rev 추정치 변화(미장): {r7, r30, r90 = 12개월 선행 EPS의 7/30/90일 전 대비 변화율, up30, dn30 = 30일간 상향·하향 애널리스트 수}
+const blank = s => ({ s, src: '', type: '', name: '', ccy: '', px: null, per: null, fper: null, eps: null, feps: null, pbr: null, peg: null, roe: null, divy: null, beta: null, tgt: null, tgtHi: null, tgtLo: null, nAn: null, rec: null, revG: null, epsG: null, earn: null, fy: null, ntmW: null, ntmEps: null, ntmPer: null, rev: null, at: Math.floor(Date.now() / 1000) });
+
+// 12개월 선행(NTM): 올해 회계연도가 남은 비율만큼 올해 추정 EPS, 나머지는 내년 추정 EPS
+function ntmOf(fy, nowMs) {
+  const f0 = fy && fy.find(x => x.p === '0y'), f1 = fy && fy.find(x => x.p === '+1y');
+  if (!f0 || !f1 || f0.eps == null || f1.eps == null || !f0.end) return null;
+  const end = Date.parse(f0.end);
+  if (!isFinite(end)) return null;
+  const w = Math.max(0, Math.min(1, (end - nowMs) / (365.25 * 864e5)));
+  const at = k => (f0[k] != null && f1[k] != null ? w * f0[k] + (1 - w) * f1[k] : null);
+  return { w: Math.round(w * 1000) / 1000, eps: at('eps'), d7: at('d7'), d30: at('d30'), d90: at('d90') };
+}
+function applyNtm(out) {
+  const n = ntmOf(out.fy, Date.now());
+  if (!n || !(n.eps > 0)) return out;
+  const r4 = x => Math.round(x * 1e4) / 1e4;
+  out.ntmW = n.w;
+  out.ntmEps = r4(n.eps);
+  if (out.px > 0) out.ntmPer = Math.round(out.px / n.eps * 100) / 100;
+  if (out.rev) {
+    const ch = d => (d > 0 ? r4(n.eps / d - 1) : null);
+    Object.assign(out.rev, { r7: ch(n.d7), r30: ch(n.d30), r90: ch(n.d90) });
+  }
+  return out;
+}
 
 const isKr = s => /^[0-9A-Z]{6}\.(KS|KQ)$/.test(s);
 // "12.3배", "$4.56", "1,234원" → 숫자
@@ -160,7 +188,7 @@ function cachePut(env, ctx, k, v, ttlSec) {
 }
 
 async function fundRoute(s, env, ctx) {
-  const now = Date.now(), kr = isKr(s), ck = 'f:' + s;
+  const now = Date.now(), kr = isKr(s), ck = FK + s;
   const prev = await cacheGet(env, ck);
   const old = prev && prev.data && prev.data.src !== 'none' ? prev.data : null;
   if (prev && prev.data && prev.fresh > now) return [prev.data, 200];
@@ -207,7 +235,40 @@ async function naverKr(s) {
     tgt: toNum(ci.priceTargetMean), rec: toNum(ci.recommMean),
   });
   if (out.per == null && out.fper == null && out.pbr == null && out.tgt == null) return null; // ETF 등 → Yahoo로
-  return out;
+  if (out.per > 0 && out.eps > 0) out.px = Math.round(out.per * out.eps); // 현재가 근사 (PER × EPS)
+  out.fy = await naverAnnual(code).catch(() => null);
+  return applyNtm(out);
+}
+
+// 네이버 연간 재무(추정치 포함): financeInfo.trTitleList[{key, title:'2026.12.', isConsensus:'Y'}] + rowList[{title:'EPS', columns:{key:{value}}}]
+// 응답 형식을 직접 확인하지 못해 여러 이름을 허용. debug면 읽은 기간·행 이름을 그대로 돌려줌
+async function naverAnnual(code, debug) {
+  const res = await fetch(`https://m.stock.naver.com/api/stock/${code}/finance/annual`, { headers: { ...UA, 'Referer': 'https://m.stock.naver.com/' } });
+  if (!res.ok) throw new Error('연간 재무 HTTP ' + res.status);
+  const j = await res.json().catch(() => null);
+  const F = j && (j.financeInfo || j);
+  const T = F && (F.trTitleList || F.titleList), RW = F && (F.rowList || F.rows);
+  if (!Array.isArray(T) || !Array.isArray(RW)) {
+    if (debug) return { error: '응답 형식', keys: Object.keys(j || {}), inner: F && typeof F === 'object' ? Object.keys(F) : null };
+    return null;
+  }
+  const rowName = r => String((r && (r.title || r.name)) || '').replace(/\s/g, '');
+  const epsRow = RW.find(r => /^EPS/i.test(rowName(r)));
+  const cell = (r, k) => { const c = r && r.columns && r.columns[k]; return c == null ? null : toNum(typeof c === 'object' ? (c.value ?? c.text) : c); };
+  const lastDay = (y, m) => new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10);
+  const per = T.map(t => {
+    const key = t.key || t.code, title = String(t.title || t.name || '');
+    const m = title.match(/(\d{4})\.(\d{1,2})/);
+    return { key, title, est: t.isConsensus === 'Y' || /E|추정/.test(title), end: m ? lastDay(+m[1], +m[2]) : null, eps: cell(epsRow, key) };
+  });
+  if (debug) return { periods: per, rows: RW.map(rowName).slice(0, 40) };
+  const today = new Date().toISOString().slice(0, 10);
+  const est = per.filter(x => x.est && x.end && x.eps != null).sort((a, b) => (a.end < b.end ? -1 : 1));
+  const i0 = est.findIndex(x => x.end >= today);
+  if (i0 < 0) return null;
+  const fy = [{ p: '0y', end: est[i0].end, eps: est[i0].eps }];
+  if (est[i0 + 1]) fy.push({ p: '+1y', end: est[i0 + 1].end, eps: est[i0 + 1].eps });
+  return fy;
 }
 
 // 네이버 해외주식: api.stock.naver.com/stock/{로이터 코드}/basic → stockItemTotalInfos[{code,key,value}]
@@ -314,7 +375,7 @@ async function yCrumb(env, force) {
 async function yahooSummary(s, env) {
   const cu = await coolUntil(env);
   if (cu) throw coolErr(cu);
-  const mods = 'price,summaryDetail,defaultKeyStatistics,financialData,calendarEvents';
+  const mods = 'price,summaryDetail,defaultKeyStatistics,financialData,calendarEvents,earningsTrend';
   let j = null;
   for (let attempt = 0; attempt < 2 && !j; attempt++) {
     const c = await yCrumb(env, attempt > 0);
@@ -342,13 +403,33 @@ async function yahooSummary(s, env) {
     tgt: v(FD.targetMeanPrice), tgtHi: v(FD.targetHighPrice), tgtLo: v(FD.targetLowPrice), nAn: v(FD.numberOfAnalystOpinions),
     rec: recMean != null ? Math.round((6 - recMean) * 100) / 100 : null, // Yahoo는 1=강력매수 → 5=강력매수로 뒤집음
     revG: v(FD.revenueGrowth), epsG: v(FD.earningsGrowth), earn: ed.length ? ed[0] : null,
+    px: v(P.regularMarketPrice) ?? v(FD.currentPrice),
   });
-  return out;
+  // earningsTrend: 회계연도(0y 올해, +1y 내년)별 추정 EPS 평균과 7/30/60/90일 전 값, 상향·하향 애널리스트 수
+  const ET = (R.earningsTrend && Array.isArray(R.earningsTrend.trend)) ? R.earningsTrend.trend : [];
+  const fy = ['0y', '+1y'].map(p => {
+    const t = ET.find(x => x && x.period === p);
+    if (!t) return null;
+    const EE = t.earningsEstimate || {}, TR = t.epsTrend || {}, RV = t.epsRevisions || {};
+    const rv = re => { const k = Object.keys(RV).find(x => re.test(x)); return k ? v(RV[k]) : null; }; // 키 대소문자가 섞여 있음 (downLast7Days 등)
+    const end = typeof t.endDate === 'string' ? t.endDate : (t.endDate && (t.endDate.fmt || null));
+    return {
+      p, end, eps: v(EE.avg), n: v(EE.numberOfAnalysts),
+      cur: v(TR.current), d7: v(TR['7daysAgo']), d30: v(TR['30daysAgo']), d60: v(TR['60daysAgo']), d90: v(TR['90daysAgo']),
+      up7: rv(/^uplast7days$/i), up30: rv(/^uplast30days$/i), dn7: rv(/^downlast7days$/i), dn30: rv(/^downlast30days$/i),
+    };
+  }).filter(x => x && x.eps != null);
+  if (fy.length) {
+    out.fy = fy;
+    const sum = k => fy.reduce((a, x) => a + (x[k] || 0), 0);
+    out.rev = { r7: null, r30: null, r90: null, up30: sum('up30'), dn30: sum('dn30') };
+  }
+  return applyNtm(out);
 }
 
 // /fund?s=…&diag=1 : 소스별 결과와 캐시 상태 (캐시에 쓰지 않음)
 async function diagnose(s, env) {
-  const now = Date.now(), c = await cacheGet(env, 'f:' + s), cu = await coolUntil(env);
+  const now = Date.now(), c = await cacheGet(env, FK + s), cu = await coolUntil(env);
   const brief = d => (!d || d.error ? d : Object.fromEntries(Object.entries(d).filter(([, x]) => x != null && x !== '')));
   const out = {
     s, kv: !!env.CACHE,
@@ -356,7 +437,10 @@ async function diagnose(s, env) {
     cached: c && c.data ? { src: c.data.src, savedMinAgo: Math.round((now / 1000 - c.data.at) / 60), freshMinLeft: Math.round((c.fresh - now) / 60e3) } : null,
   };
   out.yahoo = brief(await yahooSummary(s, env).catch(e => ({ error: e.message })));
-  if (isKr(s)) out.naver = brief(await naverKr(s).catch(e => ({ error: e.message })));
+  if (isKr(s)) {
+    out.naver = brief(await naverKr(s).catch(e => ({ error: e.message })));
+    out.naverAnnual = await naverAnnual(s.slice(0, 6), true).catch(e => ({ error: e.message }));
+  }
   else out.naverUs = brief(await naverUs(s, true).catch(e => ({ error: e.message })));
   return out;
 }

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-FPcBXBqFfhyrHwMN18k56VJxqYjqNApFrOn7Nnp/WMA=' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; connect-src https://sheets.googleapis.com https://www.googleapis.com https://oauth2.googleapis.com https://accounts.google.com/gsi/ https://*.workers.dev; frame-src https://accounts.google.com/gsi/; img-src 'self' data:; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-pbHrWea5kUDPOx+WCZm7eAJMwZinUuLfTGBycSbL5KY=' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; connect-src https://sheets.googleapis.com https://www.googleapis.com https://oauth2.googleapis.com https://accounts.google.com/gsi/ https://*.workers.dev; frame-src https://accounts.google.com/gsi/; img-src 'self' data:; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
 <meta name="robots" content="noindex,nofollow">
 <meta name="theme-color" content="#0b0f17">
@@ -226,11 +226,11 @@ code{background:var(--bg2);padding:1px 5px;border-radius:5px;font-size:12.5px}
 <script>
 'use strict';
 /* ================= 상수 / 유틸 ================= */
-const VERSION='1.4.1';
+const VERSION='1.5.0';
 const SH='https://sheets.googleapis.com/v4/spreadsheets';
 const SHEETS_SCOPE='https://www.googleapis.com/auth/spreadsheets';
 const SCOPES=SHEETS_SCOPE+' openid email';
-const APP={plan:'App_매매계획',review:'App_매매회고',snap:'App_자산추이',watch:'App_관심종목',outlook:'App_전망',daily:'App_일간전망',signal:'App_시그널'};
+const APP={plan:'App_매매계획',review:'App_매매회고',snap:'App_자산추이',watch:'App_관심종목',outlook:'App_전망',daily:'App_일간전망',signal:'App_시그널',fin:'App_재무추이'};
 const APPK=Object.keys(APP);
 const CASH='현금투자';
 const HDR={
@@ -240,9 +240,10 @@ const HDR={
   watch:['티커','종목명','시장','메모','추가일'],
   outlook:['작성일','구분','티커','종목명','단기','중기','장기','요약','근거·이벤트','출처'],
   daily:['작성일','구분','티커','종목명','오늘 전망','요약','체크포인트','출처'],
-  signal:['키','신호일','시장','티커','종목명','구분','전략','신호','근거','가격','기준 심볼','기록시각']
+  signal:['키','신호일','시장','티커','종목명','구분','전략','신호','근거','가격','기준 심볼','기록시각'],
+  fin:['키','일자','시장','티커','종목명','현재가','실적 PER','12개월 선행 PER','포워드 PER','실적 EPS','12개월 선행 EPS','올해 회계연도 말','올해 추정 EPS','내년 회계연도 말','내년 추정 EPS','목표주가','투자의견(5=강력매수)','출처','기록시각']
 };
-const HCOL={plan:'I',review:'L',snap:'L',watch:'E',outlook:'J',daily:'H',signal:'L'};
+const HCOL={plan:'I',review:'L',snap:'L',watch:'E',outlook:'J',daily:'H',signal:'L',fin:'S'};
 const MKL={KR:'국장',US:'미장'};
 const MCCY={KR:'KRW',US:'USD'};
 const DEF_ACC={KR:['메리츠증권','메리츠 RIA','토스증권','토스 RIA'],US:['메리츠증권','토스증권']};
@@ -250,7 +251,7 @@ const TAGS=['추세추종','눌림목','돌파','실적','뉴스/이벤트','장
 const EMOS=['확신','보통','불안','FOMO','공포','후회'];
 const LEV_US=new Set(['SOXL','TQQQ','UPRO','SPXL','TECL','FNGU','NVDL','NVDU','TSLL','METU','CONL','MSTU','SOXS','SQQQ','LABU','TNA','UDOW','QLD','SSO','USD','ROM','GGLL','AMZU','AAPU','MSFU','BITX','TSLT','NVDX','AVL','MUU','SNDU']);
 const PAL=['#6c8cff','#f5a524','#22c3a6','#e5568f','#9b7bff','#41b8e8','#f07c3c','#a3c94a'];
-const DEF={clientId:'',mainId:'',krId:'',usId:'',email:'',chartUrl:'',sp:{},under:{},lockMin:3,fees:{},fxp:{},taxKRsell:0,autoSnap:true,sigLog:true,theme:'auto',demo:false};
+const DEF={clientId:'',mainId:'',krId:'',usId:'',email:'',chartUrl:'',sp:{},under:{},lockMin:3,fees:{},fxp:{},taxKRsell:0,autoSnap:true,sigLog:true,finLog:true,theme:'auto',demo:false};
 
 /* 계좌별 매매 수수료 기본값 (설정에서 계좌별로 덮어씀). 키: 시장|계좌명에 포함된 증권사명
    b/s: 매수/매도 수수료 %, sec: 미장 매도 SEC Fee %, min: SEC 최소금액($), until: 우대요율 종료일, after: 종료 후 수수료 % */
@@ -400,7 +401,7 @@ async function fetchAll(){
   const mainS=sid(mm);
   const req=[`${qn('총자산')}!A1:J30`,`${qn(CASH)}!A1:H`,`${qn('설정')}!B5`];
   const opt=APPK.filter(k=>APP[k] in mainS);
-  opt.forEach(k=>req.push(`${qn(APP[k])}!A2:L`));
+  opt.forEach(k=>req.push(`${qn(APP[k])}!A2:${HCOL[k]}`));
   const mkReq=m=>{const s=sid(m);const titles=Object.keys(s).filter(t=>t!=='종목목록');return {s,titles,ranges:[...titles.map(t=>`${qn(t)}!A1:K`),...('종목목록' in s?[`${qn('종목목록')}!A2:A`]:[])]}};
   const kq=mkReq(km),uq=mkReq(um);
   const [mv,kv,uv]=await Promise.all([batchGet(I.main,req),batchGet(I.KR,kq.ranges),batchGet(I.US,uq.ranges)]);
@@ -490,6 +491,7 @@ function buildData(raw){
   const dl=(raw.daily||[]).map((r,i)=>({row:i+2,date:toSerial(r[0]),kind:str(r[1]),ticker:str(r[2]).toUpperCase(),name:str(r[3]),v:str(r[4]),sum:str(r[5]),chk:str(r[6]),src:str(r[7])})).filter(o=>o.date);
   const dd=dl.length?Math.max(...dl.map(o=>o.date)):0;D.daily={date:dd,rows:dl.filter(o=>o.date===dd)};
   D.signals=(raw.signal||[]).map((r,i)=>sigParse(r,i+2)).filter(o=>o.key&&o.date);D.sigKeys=new Set(D.signals.map(o=>o.key));
+  finIndex(D,(raw.fin||[]).map((r,i)=>finParse(r,i+2)).filter(o=>o.key&&o.date&&o.ticker));
   return D;
 }
 const curStock=()=>S.D&&S.v.stock?(S.D.byKey[S.v.stock]||(S.D.wByKey||{})[S.v.stock]):null;
@@ -580,7 +582,11 @@ const Store={
   // 신호 이력: 쓰기 직전 A열(키)을 다시 읽어 다른 기기에서 이미 기록한 신호는 건너뛰고 맨 아래에 추가
   async addSignals(rows){const id=ids().main,T=qn(APP.signal);const col=await getVals(id,`${T}!A:A`);const have=new Set(col.map(r=>str(r[0])));
     const add=rows.filter(r=>!have.has(r[0]));if(!add.length)return [];const st=Math.max(2,col.length+1);
-    await batchUpdateVals(id,[{range:`${T}!A${st}:L${st+add.length-1}`,values:add}]);return add.map((r,i)=>({row:st+i,r}))}
+    await batchUpdateVals(id,[{range:`${T}!A${st}:L${st+add.length-1}`,values:add}]);return add.map((r,i)=>({row:st+i,r}))},
+  // 재무 기록: 같은 방식(키 = 일자|티커)으로 중복 없이 맨 아래에 추가
+  async addFin(rows){const id=ids().main,T=qn(APP.fin);const col=await getVals(id,`${T}!A:A`);const have=new Set(col.map(r=>str(r[0])));
+    const add=rows.filter(r=>!have.has(r[0]));if(!add.length)return [];const st=Math.max(2,col.length+1);
+    await batchUpdateVals(id,[{range:`${T}!A${st}:S${st+add.length-1}`,values:add}]);return add.map((r,i)=>({row:st+i,r}))}
 };
 // 날짜를 키로 쓰는 자산추이는 A열이 날짜 serial로 저장되므로 별도 조회
 Store.rowOf=(function(orig){return async function(k,key){
@@ -981,7 +987,15 @@ function hzScore(X,ctx,f){const i=X.L-1,c=X.c[i],S={short:[],mid:[],long:[]},add
   const hi=TA.hhv(X.h,i-250,i),lo=TA.llv(X.l,i-250,i);if(c>=hi*.95)add('mid',.5,`52주 고점 근처 (${pcs(c/hi-1)})`);else if(c<=lo*1.05)add('mid',-.5,`52주 저점 근처 (${pcs(c/lo-1)})`);
   if(X.ma200[i]!=null){add('long',c>X.ma200[i]?1:-1,`200일선 ${pcs(c/X.ma200[i]-1)}`);if(X.ma200[i-20]!=null)add('long',X.ma200[i]>X.ma200[i-20]?.5:-.5,X.ma200[i]>X.ma200[i-20]?'200일선 상승':'200일선 하락')}
   if(i>=252){const r12=c/X.c[i-252]-1;add('long',r12>0?.5:-.5,`12개월 ${pcs(r12)}`);const ri=ctx&&ctx.idx?TA.retBetween(ctx.idx,X.ser[i-252],X.ser[i]):null;if(ri!=null)add('long',r12>ri?.5:-.5,r12>ri?'12개월 지수 대비 강함':'12개월 지수 대비 약함')}
-  if(f){const px=f.px||c;if(f.tgt)add('long',f.tgt/px-1>.15?.5:f.tgt<px?-.5:0,`목표주가 ${pcs(f.tgt/px-1)}`);if(f.fper&&f.per){if(f.fper<f.per*.9)add('long',.5,`포워드 PER ${f.fper.toFixed(1)} < 실적 PER ${f.per.toFixed(1)} (이익 증가 예상)`);else if(f.fper>f.per*1.1)add('long',-.5,`포워드 PER ${f.fper.toFixed(1)} > 실적 PER ${f.per.toFixed(1)} (이익 감소 예상)`)}}
+  if(f){const px=f.px||c;if(f.tgt)add('long',f.tgt/px-1>.15?.5:f.tgt<px?-.5:0,`목표주가 ${pcs(f.tgt/px-1)}`);
+    // 이익 성장 기대: 12개월 선행 PER(없으면 제공처 포워드 PER) vs 실적 PER
+    const fp=f.ntmPer>0?f.ntmPer:f.fper,fl=f.ntmPer>0?'12개월 선행 PER':'포워드 PER';
+    if(fp&&f.per){if(fp<f.per*.9)add('long',.5,`${fl} ${fp.toFixed(1)} < 실적 PER ${f.per.toFixed(1)} (이익 증가 예상)`);else if(fp>f.per*1.1)add('long',-.5,`${fl} ${fp.toFixed(1)} > 실적 PER ${f.per.toFixed(1)} (이익 감소 예상)`)}
+    // 추정치 변화: 미장은 Yahoo의 30일 전 추정치 대비, 국장은 App_재무추이 기록 기준
+    const hs=f.hist||{},rv=f.rev&&f.rev.r30!=null?{r:f.rev.r30,t:`EPS 추정치 30일 ${pcs(f.rev.r30)}${f.rev.up30!=null?` (상향 ${f.rev.up30}·하향 ${f.rev.dn30})`:''}`}:hs.rev30!=null?{r:hs.rev30,t:`EPS 추정치 ${hs.revDays}일 ${pcs(hs.rev30)} (기록 기준)`}:null;
+    if(rv){if(rv.r>.02)add('mid',.5,rv.t);else if(rv.r<-.02)add('mid',-.5,rv.t)}
+    // 밸류에이션 위치: 12개월 선행 PER의 최근 1년 기록 중 백분위
+    const b=hs.band;if(b){if(b.pct<=.2)add('long',.5,`12개월 선행 PER 1년 ${pctPos(b.pct)}`);else if(b.pct>=.8)add('long',-.5,`12개월 선행 PER 1년 ${pctPos(b.pct)}`)}}
   const lab=(k,t)=>{const v=S[k].reduce((a,x)=>a+x.v,0),hi2=k==='short'?1.5:2,hi1=k==='short'?.5:.75;return {v,lv:v>=hi2?2:v>=hi1?1:v<=-hi2?-2:v<=-hi1?-1:0,r:S[k].filter(x=>x.v).sort((a,b)=>Math.abs(b.v)-Math.abs(a.v))}};
   return {short:lab('short'),mid:lab('mid'),long:lab('long')}}
 // 최근 60일 변동성 기준 1주·1개월 예상 범위(약 68%)
@@ -1022,6 +1036,7 @@ function fundNeed(sym){if(!sym)return;const o=SG.fund[sym]||(SG.fund[sym]={});if
 const sgReady=()=>S.cfg.demo||chartUrlOk(S.cfg.chartUrl);
 // 화면에 필요한 시세를 요청 (render 직후·15초 간격)
 function sgAuto(){if(!S.D||S.locked||!sgReady())return;
+  if(S.D.has.fin&&S.cfg.finLog&&FL.day!==todayStr())finLogTick();
   if(S.D.has.signal&&S.cfg.sigLog&&!SGL.busy&&Date.now()-SGL.at>10*60e3){const all=new Set();sgUniverse('all').forEach(x=>sgSyms(x).list.forEach(s=>all.add(s)));sgNeed([...all]);if(!SG.run&&!SG.q.length)sgLogScan()}
   const h=curStock();if(S.v.stock&&h){const s=sgSyms(h);sgNeed(s.list);if(s.sym)sgNeed([s.sym],'5yd');if(s.own&&!s.u)fundNeed(s.own);return}
   if(S.v.tab!=='strat')return;const sg=S.v.sg||'sig';
@@ -1038,7 +1053,7 @@ function sgUniverse(which){const D=S.D;which=which||S.v.su||'all';const hs=D.hol
 function posStart(h){const c=calcTrades(h.trades);let s=h.trades.length?h.trades[0].date:toSerial(todayStr());c.forEach((t,i)=>{if(t.type!=='매도'&&(i===0||c[i-1].cum<=1e-9))s=t.date});return s}
 function sgItem(h){const s=sgSyms(h),P=spP(),X=s.sym?sgX(s.sym):null,X0=s.own?sgX(s.own):null,I=sgX(s.idx);
   const e=s.sym&&sgE(s.sym),fo=s.own&&SG.fund[s.own];const ctx={idx:I,idxName:IDXN[s.idx]};
-  const f=fo&&fo.f&&!s.u?Object.assign({},fo.f,{px:X0?X0.c[X0.L-1]:h.price}):null;
+  let f=null;if(fo&&fo.f&&!s.u){const px=X0?X0.c[X0.L-1]:(h.price||fo.f.px);f=Object.assign({},fo.f,{px});if(f.ntmEps>0&&px>0)f.ntmPer=px/f.ntmEps;f.hist=finHist(h.ticker,f.ntmPer,f)}
   const it={h,s,X,X0,ctx,f,P,loading:!X&&!!(e&&(e.busy||!e.at)),err:!X&&e&&e.err||(!s.sym?'티커를 시세 심볼로 바꿀 수 없음':'')};
   if(X){it.hz=hzScore(X,ctx,f);it.rng=X0?expRange(X0):s.u?null:expRange(X)}
   if(!h.watch)it.risk=riskOf(h,it);return it}
@@ -1177,15 +1192,22 @@ const REC=v=>v==null?'-':v>=4.5?'강력 매수':v>=3.5?'매수':v>=2.5?'중립':
 function fundBlock(h,x){if(x.s.u)return `<div class="sect">재무·컨센서스</div><div class="xs faint">레버리지 상품이라 재무지표 대신 기초자산 신호를 봅니다.</div>`;
   const o=x.s.own&&SG.fund[x.s.own];if(!o||(!o.f&&!o.err))return `<div class="sect">재무·컨센서스</div><div class="xs faint">불러오는 중…</div>`;
   if(!o.f)return `<div class="sect">재무·컨센서스</div><div class="xs faint">불러오지 못했습니다 · ${esc(o.err)}</div>`;
-  const f=o.f,px=x.X0?x.X0.c[x.X0.L-1]:h.price,cc=h.ccy,n=(v,d=1)=>v==null?'-':fmtNum(v,d),p=v=>v==null?'-':(v*100).toFixed(1)+'%';
+  const f=x.f||o.f,px=x.X0?x.X0.c[x.X0.L-1]:h.price,cc=h.ccy,n=(v,d=1)=>v==null?'-':fmtNum(v,d),p=v=>v==null?'-':(v*100).toFixed(1)+'%',ed=cc==='USD'?2:0;
   if(f.type&&f.type!=='EQUITY'&&f.per==null&&f.fper==null)return `<div class="sect">재무·컨센서스</div><div class="xs faint">${f.type==='ETF'?'ETF':'이 종목'}는 재무지표가 없습니다.</div>`;
   const up=f.tgt&&px?f.tgt/px-1:null,eg=f.feps&&f.eps?f.feps/f.eps-1:null;
-  const kv=[['포워드 PER',f.fper!=null?n(f.fper)+'배':'-'],['실적 PER',f.per!=null?n(f.per)+'배':'-'],['PBR',f.pbr!=null?n(f.pbr,2)+'배':'-'],['EPS → 추정',f.eps!=null||f.feps!=null?`${n(f.eps,cc==='USD'?2:0)} → ${n(f.feps,cc==='USD'?2:0)}${eg!=null?` (${pcs(eg)})`:''}`:'-'],
+  const fy=f.fy||[],f0=fy.find(z=>z.p==='0y'),f1=fy.find(z=>z.p==='+1y'),fyl=z=>z&&z.end?`${z.end.slice(2,4)}.${z.end.slice(5,7)}`:'',hs=f.hist||{n:0},b=hs.band;
+  const ntm=f.ntmEps>0&&px>0?px/f.ntmEps:f.ntmPer;
+  const rv=f.rev&&f.rev.r30!=null?pcs(f.rev.r30):hs.rev30!=null?`${pcs(hs.rev30)} (기록 ${hs.revDays}일)`:'-';
+  const band=b?`${pctPos(b.pct)} · ${n(b.lo)}~${n(b.hi)}배`:hs.n?`기록 ${hs.n}회 · ${FIN_MIN}회부터`:'-';
+  const kv=[['12개월 선행 PER',ntm>0?`${n(ntm)}배`:'-'],['선행 PER 1년 위치',band],['포워드 PER',f.fper!=null?n(f.fper)+'배':'-'],['실적 PER',f.per!=null?n(f.per)+'배':'-'],
+    [`올해 추정 EPS${f0?` (${fyl(f0)})`:''}`,f0?n(f0.eps,ed):'-'],[`내년 추정 EPS${f1?` (${fyl(f1)})`:''}`,f1?n(f1.eps,ed):'-'],['EPS 추정 30일',rv],['EPS 추정 90일',f.rev&&f.rev.r90!=null?pcs(f.rev.r90):'-'],['상향·하향 (30일)',f.rev&&f.rev.up30!=null?`${f.rev.up30} · ${f.rev.dn30}명`:'-'],['PBR',f.pbr!=null?n(f.pbr,2)+'배':'-'],['EPS → 포워드 EPS',f.eps!=null||f.feps!=null?`${n(f.eps,cc==='USD'?2:0)} → ${n(f.feps,cc==='USD'?2:0)}${eg!=null?` (${pcs(eg)})`:''}`:'-'],
     ['목표주가 평균',f.tgt?`${fmtMoney(f.tgt,cc)} (${pcs(up)})`:'-'],['목표주가 범위',f.tgtLo&&f.tgtHi?`${fmtMoney(f.tgtLo,cc)} ~ ${fmtMoney(f.tgtHi,cc)}`:'-'],['투자의견',f.rec!=null?`${REC(f.rec)} (${n(f.rec,2)}/5)${f.nAn?` · ${f.nAn}명`:''}`:'-'],
     ['ROE',p(f.roe)],['배당수익률',p(f.divy)],['베타',n(f.beta,2)],['PEG',n(f.peg,2)],['매출 성장률',p(f.revG)],['다음 실적 발표',f.earn?sToStr(Math.floor(f.earn/86400)+25569):'-']].filter(([,v])=>v!=='-');
   const ago=f.at?Math.max(0,Date.now()/1000-f.at):0,agoS=ago<3600?Math.max(1,Math.round(ago/60))+'분':ago<86400?Math.round(ago/3600)+'시간':Math.round(ago/86400)+'일';
-  const note=f.stale?`최신 조회에 실패해 ${agoS} 전 자료를 보여줍니다.`:f.warn&&f.src==='naver'?'Yahoo 조회에 실패해 네이버 해외주식 자료를 보여줍니다. 포워드 PER·목표주가가 빠질 수 있습니다.':'';
-  return `<div class="sect">재무·컨센서스 <span class="xs faint">${f.src==='naver'?'네이버 증권':f.src==='yahoo'?'Yahoo Finance':f.src==='demo'?'데모':''}</span></div>${kv.length?`<div class="kvg">${kv.map(([k,v])=>`<div><span>${k}</span><b class="num">${v}</b></div>`).join('')}</div>`:'<div class="xs faint">표시할 재무지표가 없습니다.</div>'}${note?`<div class="xs faint" style="margin-top:6px">${esc(note)}</div>`:''}`}
+  const note=[f.stale?`최신 조회에 실패해 ${agoS} 전 자료를 보여줍니다.`:f.warn&&f.src==='naver'?'Yahoo 조회에 실패해 네이버 해외주식 자료를 보여줍니다. 포워드 PER·목표주가가 빠질 수 있습니다.':'',
+    ntm>0?`12개월 선행 PER = 현재가 ÷ (올해 추정 EPS ${Math.round((f.ntmW||0)*100)}% + 내년 ${100-Math.round((f.ntmW||0)*100)}%). 포워드 PER은 제공처 기준이라 연도가 다를 수 있습니다.`:'',
+    !S.D.has.fin?`설정 → 앱 전용 시트에서 ${APP.fin}를 만들면 매일 기록해 선행 PER 1년 위치를 보여줍니다.`:''].filter(Boolean);
+  return `<div class="sect">재무·컨센서스 <span class="xs faint">${f.src==='naver'?'네이버 증권':f.src==='yahoo'?'Yahoo Finance':f.src==='demo'?'데모':''}</span></div>${kv.length?`<div class="kvg">${kv.map(([k,v])=>`<div><span>${k}</span><b class="num">${v}</b></div>`).join('')}</div>`:'<div class="xs faint">표시할 재무지표가 없습니다.</div>'}${note.map(t=>`<div class="xs faint" style="margin-top:6px">${esc(t)}</div>`).join('')}`}
 
 /* ================= 관심종목 · 전략 설정 ================= */
 function vWatchStock(h){const it=sgItem(h),X0=it.X0,px=X0?X0.c[X0.L-1]:0,pc=X0&&X0.L>1?px/X0.c[X0.L-2]-1:null;
@@ -1215,6 +1237,47 @@ function spForm(){const P=spP(),D=S.D;const lev=D.hold.filter(h=>h.active&&h.lev
    <div class="btns"><button class="btn" data-act="spReset">기본값</button><button class="btn pri" data-act="spSave">저장</button></div>`)}
 function sgReset(){Object.values(SG.d).forEach(e=>{e.X=null})}
 
+
+/* ================= 재무 기록 (App_재무추이) ================= */
+// 평일 앱을 열 때 하루 한 번 보유·관심 종목의 PER·EPS 추정치를 기록 → 12개월 선행 PER 1년 범위, 국장 추정치 변화 계산에 사용
+const FL={day:'',busy:false,err:'',n:0,at:0};
+const FIN_MIN=60; // 1년 위치(백분위)를 보여줄 최소 기록 수
+const pctPos=p=>p<=.5?`하위 ${Math.max(1,Math.round(p*100))}%`:`상위 ${Math.max(1,Math.round((1-p)*100))}%`;
+const numN=v=>v==null||v===''?null:num(v);
+function finParse(r,row){return {row,key:str(r[0]),date:toSerial(r[1]),mkt:str(r[2])==='미장'?'US':'KR',ticker:str(r[3]).toUpperCase(),name:str(r[4]),px:numN(r[5]),per:numN(r[6]),ntmPer:numN(r[7]),fper:numN(r[8]),eps:numN(r[9]),ntmEps:numN(r[10]),
+  f0end:toSerial(r[11]),f0eps:numN(r[12]),f1end:toSerial(r[13]),f1eps:numN(r[14]),tgt:numN(r[15]),rec:numN(r[16]),src:str(r[17])}}
+function finIndex(D,rows){D.fin=rows;D.finKeys=new Set(rows.map(o=>o.key));D.finBy={};rows.forEach(o=>(D.finBy[o.ticker]||(D.finBy[o.ticker]=[])).push(o));
+  Object.values(D.finBy).forEach(a=>a.sort((x,y)=>x.date-y.date));D.finLast=rows.reduce((m,o)=>Math.max(m,o.date),0)}
+// 대상: 레버리지가 아닌 보유·관심 종목 (ETF·재무가 없는 종목은 기록할 때 빠짐)
+const finTargets=()=>sgUniverse('all').filter(h=>{const s=sgSyms(h);return s.own&&!s.u});
+function finRow(h,f,px,today,now){const fy=f.fy||[],f0=fy.find(z=>z.p==='0y'),f1=fy.find(z=>z.p==='+1y'),r=v=>v==null||!isFinite(v)?'':Math.round(v*1e4)/1e4;
+  const ntmPer=f.ntmEps>0&&px>0?px/f.ntmEps:null;
+  return [`${today}|${h.ticker}`,today,MKL[h.mkt],h.ticker,safeText(h.name),r(px),r(f.per),r(ntmPer),r(f.fper),r(f.eps),r(f.ntmEps),f0&&f0.end||'',f0?r(f0.eps):'',f1&&f1.end||'',f1?r(f1.eps):'',r(f.tgt),r(f.rec),f.src==='yahoo'?'Yahoo':f.src==='naver'?'네이버':f.src,now]}
+async function finLogTick(force){const D=S.D;if(!D||S.locked||!D.has.fin||!sgReady()||FL.busy)return;
+  const today=todayStr(),dow=new Date().getDay();if(!force&&(!S.cfg.finLog||FL.day===today||dow===0||dow===6))return;
+  if(!force&&D.finLast>=toSerial(today)){FL.day=today;return} // 다른 기기에서 이미 기록
+  const T=finTargets();if(!T.length)return;
+  T.forEach(h=>{const s=sgSyms(h);fundNeed(s.own);sgNeed([s.own])});
+  // 모든 대상의 재무 응답(성공·실패)과 시세가 도착할 때까지 기다림 (15초마다 다시 확인)
+  if(T.some(h=>{const s=sgSyms(h),o=SG.fund[s.own],e=sgE(s.own);return !o||o.busy||!o.at||!e||e.busy||!e.at}))return;
+  FL.busy=true;FL.day=today;
+  try{const now="'"+nowStr(),rows=[];
+    T.forEach(h=>{const s=sgSyms(h),o=SG.fund[s.own],f=o&&o.f;if(!f||f.stale||(f.type&&f.type!=='EQUITY')||(f.per==null&&f.fper==null&&f.ntmEps==null))return;
+      if(D.finKeys.has(`${today}|${h.ticker}`))return;const X0=sgX(s.own);rows.push(finRow(h,f,X0?X0.c[X0.L-1]:(f.px||h.price||null),today,now))});
+    const added=rows.length?await Store.addFin(rows):[];
+    if(added.length)finIndex(D,D.fin.concat(added.map(({row,r})=>finParse(r,row))));
+    FL.n=added.length;FL.at=Date.now();FL.err='';if(force)toast(added.length?`재무 ${added.length}종목을 기록했습니다`:'오늘 기록할 새 재무가 없습니다')}
+  catch(e){FL.err=e.message;FL.day='';if(force)toast('재무 기록 실패: '+e.message,3500)}
+  finally{FL.busy=false;sgRepaint()}}
+// 기록으로 계산: 12개월 선행 PER의 최근 1년 기록 중 현재 위치(백분위), 약 30일 전 같은 회계연도 추정 EPS 대비 변화
+function finHist(tk,nowPer,f){const D=S.D,rs=(D&&D.finBy&&D.finBy[tk])||[],out={n:rs.length};if(!rs.length)return out;
+  const today=toSerial(todayStr()),yr=rs.filter(o=>o.date>today-366&&o.ntmPer>0);
+  if(yr.length>=FIN_MIN&&nowPer>0){const v=yr.map(o=>o.ntmPer).sort((a,b)=>a-b);out.band={n:v.length,lo:v[0],hi:v[v.length-1],med:v[v.length>>1],pct:v.filter(z=>z<=nowPer).length/v.length}}
+  const old=rs.filter(o=>o.date<=today-28&&o.date>=today-45).pop();
+  if(old&&f&&f.fy){const m={};if(old.f0end)m[old.f0end]=old.f0eps;if(old.f1end)m[old.f1end]=old.f1eps;
+    const c=[...f.fy].reverse().find(z=>z.end&&z.eps!=null&&m[toSerial(z.end)]>0);
+    if(c){out.rev30=c.eps/m[toSerial(c.end)]-1;out.revDays=today-old.date}}
+  return out}
 
 /* ================= 신호 이력 (App_시그널) ================= */
 // 확정된 일봉(장중이면 마지막 봉 제외) 최근 10봉에서 새로 켜진 신호만 찾아 기록. 키 = 신호일|티커|전략|신호 로 중복 방지
@@ -1705,6 +1768,7 @@ function vSettings(){
   <section class="card"><h2>기능</h2>
    <div class="set"><div>자산 추이 자동 기록<div class="d">앱을 열 때 오늘 값을 App_자산추이에 저장</div></div>${sw('autoSnap')}</div>
    <div class="set"><div>신호 자동 기록<div class="d">앱을 열 때 확정된 일봉 기준 새 전략 신호를 ${APP.signal}에 저장 (주가 차트 서버 필요)</div></div>${sw('sigLog')}</div>
+   <div class="set"><div>재무 자동 기록<div class="d">평일 앱을 열 때 하루 한 번 보유·관심 종목의 PER·EPS 추정치를 ${APP.fin}에 저장 (주가 차트 서버 필요)${D&&D.finLast?` · 마지막 ${sToStr(D.finLast)}`:''}${FL.err?` · 오류: ${esc(FL.err)}`:''}</div></div>${sw('finLog')}</div>
    <div class="set"><div>주가 차트 서버<div class="d" style="word-break:break-all">${c.demo?'데모 모드는 가상 시세 사용':c.chartUrl?esc(c.chartUrl.replace(/^https:\/\//,'')):'미연결 · 종목 상세 차트용 Cloudflare Worker'}</div></div><button class="btn sm" data-act="chartUrlForm">${c.chartUrl?'변경':'연결'}</button></div>
    ${D?`<div class="set"><div>앱 전용 시트<div class="d">${APPK.map(k=>`${APP[k]} ${has[k]?'✓':'✗'}`).join(' · ')}</div></div>${APPK.some(k=>!has[k])?`<button class="btn sm pri" data-act="createSheets" data-busy>만들기</button>`:''}</div>`:''}</section>
   ${D?vCheck():''}
@@ -2066,7 +2130,8 @@ const Demo=(()=>{
       {id:107,title:APP.watch,cells:[HDR.watch,['KRX:900201','데모바이오','국장','실적 발표 후 진입 검토','2026-10-01'],['NASDAQ:AMD','AMD','미장','','2026-10-05']]},
       {id:108,title:APP.outlook,cells:[HDR.outlook,...demoOutlook()]},
       {id:109,title:APP.signal,cells:[HDR.signal]},
-      {id:110,title:APP.daily,cells:[HDR.daily,...demoDaily()]}]}};
+      {id:110,title:APP.daily,cells:[HDR.daily,...demoDaily()]},
+      {id:111,title:APP.fin,cells:[HDR.fin,...demoFin()]}]}};
     sheet('main','현금투자').flows=openFlows();
     // 자산추이 시드
     const s=summary();const today=toSerial(todayStr());let tot=s.TOT.total,pr=s.TOT.principal;const rows=[];let seed=7;const rnd=()=>{seed=(seed*16807)%2147483647;return seed/2147483647};
@@ -2187,14 +2252,31 @@ const Demo=(()=>{
     return sleep(220).then(()=>out);
   }
   // 가상 재무·컨센서스
-  function fund(sym){const code=sym.replace(/\.(KS|KQ)$/,'').replace(/-/g,'.');const tk=Object.keys(PR).find(k=>k.split(':')[1]===code),kr=/\.(KS|KQ)$/.test(sym),px=PR[tk]||100;
+  function fund(sym){return sleep(150).then(()=>fundObj(sym))}
+  function fundObj(sym){const code=sym.replace(/\.(KS|KQ)$/,'').replace(/-/g,'.');const tk=Object.keys(PR).find(k=>k.split(':')[1]===code),kr=/\.(KS|KQ)$/.test(sym),px=PR[tk]||100;
     const base={s:sym,src:'demo',type:'EQUITY',name:'',ccy:kr?'KRW':'USD',per:null,fper:null,eps:null,feps:null,pbr:null,peg:null,roe:null,divy:null,beta:null,tgt:null,tgtHi:null,tgtLo:null,nAn:null,rec:null,revG:null,epsG:null,earn:null};
-    if(/QQQ|SOXL|900103/.test(sym))return sleep(150).then(()=>Object.assign(base,{type:'ETF'}));
+    if(/QQQ|SOXL|900103/.test(sym))return Object.assign(base,{type:'ETF'});
     let seed=[...sym].reduce((a,ch)=>a*31+ch.charCodeAt(0)|0,11)||11;const rnd=()=>{seed=(seed*16807)%2147483647;if(seed<=0)seed+=2147483646;return seed/2147483647};
     const per=12+rnd()*25,fper=per*(.7+rnd()*.5),r0=v=>kr?Math.round(v):Math.round(v*100)/100,t=px*(.95+rnd()*.4);
-    return sleep(150).then(()=>Object.assign(base,{per:+per.toFixed(1),fper:+fper.toFixed(1),eps:r0(px/per),feps:r0(px/fper),pbr:+(1+rnd()*5).toFixed(2),divy:+(rnd()*.03).toFixed(4),
+    Object.assign(base,{px,per:+per.toFixed(1),fper:+fper.toFixed(1),eps:r0(px/per),feps:r0(px/fper),pbr:+(1+rnd()*5).toFixed(2),divy:+(rnd()*.03).toFixed(4),
       tgt:r0(t),tgtHi:kr?null:r0(t*1.25),tgtLo:kr?null:r0(t*.75),rec:+(3+rnd()*1.8).toFixed(2),nAn:kr?null:Math.round(10+rnd()*30),roe:kr?null:+(.05+rnd()*.3).toFixed(3),
-      beta:kr?null:+(.8+rnd()*.9).toFixed(2),peg:kr?null:+(.5+rnd()*2).toFixed(2),revG:kr?null:+(rnd()*.4-.05).toFixed(3),earn:Math.floor(Date.now()/1000)+86400*Math.round(10+rnd()*60)}))}
+      beta:kr?null:+(.8+rnd()*.9).toFixed(2),peg:kr?null:+(.5+rnd()*2).toFixed(2),revG:kr?null:+(rnd()*.4-.05).toFixed(3),earn:Math.floor(Date.now()/1000)+86400*Math.round(10+rnd()*60)});
+    // 회계연도별 추정 EPS·12개월 선행 EPS (국장 12월, 미장 9월 결산으로 가정). 추정치 변화는 미장만 (국장은 기록으로 계산)
+    const e0=kr?'2026-12-31':'2027-09-30',e1=kr?'2027-12-31':'2028-09-30',g=.08+rnd()*.25,f0=px/fper/(1+g*.4),f1=f0*(1+g);
+    const w=Math.max(0,Math.min(1,(Date.parse(e0)-Date.now())/(365.25*864e5))),ne=w*f0+(1-w)*f1,r30=(rnd()-.45)*.08;
+    base.fy=[{p:'0y',end:e0,eps:r0(f0)},{p:'+1y',end:e1,eps:r0(f1)}];base.ntmW=Math.round(w*1000)/1000;base.ntmEps=Math.round(ne*1e4)/1e4;base.ntmPer=Math.round(px/ne*100)/100;
+    base.rev=kr?null:{r7:+(r30*.25).toFixed(4),r30:+r30.toFixed(4),r90:+(r30*2.2).toFixed(4),up30:Math.round(rnd()*12),dn30:Math.round(rnd()*6)};
+    return base}
+  // 가상 재무 기록: 최근 150 평일 (국장 추정치 변화·선행 PER 1년 위치를 데모에서 볼 수 있게)
+  function demoFin(){const T=[['KRX:900101','한빛반도체','KR'],['KRX:900102','동해중공업','KR'],['KRX:900201','데모바이오','KR'],['NASDAQ:AAPL','AAPL','US'],['NASDAQ:MSFT','MSFT','US'],['NASDAQ:NVDA','NVDA','US'],['NASDAQ:AMD','AMD','US']];
+    const t0=toSerial(todayStr()),rows=[];
+    T.forEach(([tk,nm,m])=>{const code=tk.split(':')[1],f=fundObj(m==='KR'?code+'.KS':code),f0=f.fy[0],f1=f.fy[1];
+      let seed=[...tk].reduce((a,ch)=>a*37+ch.charCodeAt(0)|0,7)||7;const rnd=()=>{seed=(seed*16807)%2147483647;if(seed<=0)seed+=2147483646;return seed/2147483647};
+      const slope=(rnd()-.3)*.0015;let lp=0,d=t0,k=0;
+      while(k<150){d--;const dw=new Date((d-25569)*864e5).getUTCDay();if(dw===0||dw===6)continue;k++;lp+=(rnd()-.5)*.045;
+        const sc=1-slope*k,px=f.px*Math.exp(lp),r=v=>Math.round(v*1e4)/1e4;
+        rows.push([`${sToStr(d)}|${tk}`,d,MKL[m],tk,nm,r(px),r(f.per*Math.exp(lp)/sc),r(px/(f.ntmEps*sc)),r(f.fper*Math.exp(lp)/sc),f.eps,r(f.ntmEps*sc),toSerial(f0.end),r(f0.eps*sc),toSerial(f1.end),r(f1.eps*sc),f.tgt,f.rec,'데모',"'"+sToStr(d)+' 09:00'])}});
+    return rows.sort((a,b)=>a[1]-b[1])}
   return {handle,reset,IDS,chart,fund};
 })();
 
