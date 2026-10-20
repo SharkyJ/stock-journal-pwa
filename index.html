@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-LPYTqIXhnJzC8GrsU6zmSHA6iwl2i6hPpU/e2j978LI=' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; connect-src https://sheets.googleapis.com https://www.googleapis.com https://oauth2.googleapis.com https://accounts.google.com/gsi/ https://*.workers.dev; frame-src https://accounts.google.com/gsi/; img-src 'self' data:; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-z9kT2YTmAPdlEh6OT+vGNOXn3delZ/ma/3nIg7IoquE=' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; connect-src https://sheets.googleapis.com https://www.googleapis.com https://oauth2.googleapis.com https://accounts.google.com/gsi/ https://*.workers.dev; frame-src https://accounts.google.com/gsi/; img-src 'self' data:; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
 <meta name="robots" content="noindex,nofollow">
 <meta name="theme-color" content="#0b0f17">
@@ -227,7 +227,7 @@ code{background:var(--bg2);padding:1px 5px;border-radius:5px;font-size:12.5px}
 <script>
 'use strict';
 /* ================= 상수 / 유틸 ================= */
-const VERSION='1.5.2';
+const VERSION='1.5.3';
 const SH='https://sheets.googleapis.com/v4/spreadsheets';
 const SHEETS_SCOPE='https://www.googleapis.com/auth/spreadsheets';
 const SCOPES=SHEETS_SCOPE+' openid email';
@@ -780,8 +780,15 @@ async function pxFetch(sym,r,base){
   const ctl=new AbortController(),to=setTimeout(()=>ctl.abort(),12000);
   try{const res=await fetch(`${base||S.cfg.chartUrl}/chart?s=${encodeURIComponent(sym)}&r=${r}`,{signal:ctl.signal,credentials:'omit',referrerPolicy:'no-referrer',cache:'no-store'});
     const j=await res.json().catch(()=>null);if(!res.ok||!j||j.error)throw new Error((j&&j.error)||'HTTP '+res.status);
-    if(!Array.isArray(j.t)||!j.t.length)throw new Error('시세 데이터가 비어 있습니다');return j}
+    if(!Array.isArray(j.t)||!j.t.length)throw new Error('시세 데이터가 비어 있습니다');return pxIntra(r)?j:pxFill(j,r)}
   catch(e){throw new Error(e.name==='AbortError'?'응답 시간 초과':e.message==='Failed to fetch'?'차트 서버에 연결할 수 없습니다':e.message)}finally{clearTimeout(to)}}
+// Yahoo 일봉·주봉이 마지막 거래일 봉을 늦게 넣는 경우 대비: 현재가(price·at)가 마지막 봉보다 새로우면 그날(그 주) 봉을 채움.
+// Worker(fillLast)가 이미 채웠으면 그대로. 여기서 추가하는 봉은 시가=직전 종가(정확한 시가·고저는 Worker가 채움)
+function pxFill(d,r){const n=d.t.length,px=num(d.price),at=num(d.at);if(!(px>0)||!at||!n)return d;
+  const g=num(d.gmt),day=t=>Math.floor((t+g)/86400),wk=r==='5y',u=t=>wk?Math.floor((day(t)+3)/7):day(t),i=n-1,du=u(at)-u(d.t[i]);
+  if(du<0||du>(wk?2:10))return d;
+  if(du===0){d.c[i]=px;d.h[i]=Math.max(d.h[i],px);d.l[i]=Math.min(d.l[i],px);return d}
+  const o=d.c[i];d.t.push(wk?(u(at)*7-3)*86400-g:at);d.o.push(o);d.h.push(Math.max(o,px));d.l.push(Math.min(o,px));d.c.push(px);d.v.push(0);d.fill='app';return d}
 function pxEnsure(h,force){
   const sym=ySym(h),r=S.v.cr;if(!sym||!(S.cfg.demo||chartUrlOk(S.cfg.chartUrl)))return;
   const k=sym+'|'+r,c=PX[k]||(PX[k]={});if(c.busy)return;

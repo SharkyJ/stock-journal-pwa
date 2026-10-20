@@ -108,7 +108,6 @@ async function chart(s, r) {
       prev: m.chartPreviousClose ?? m.previousClose ?? null, price: m.regularMarketPrice ?? null, at: m.regularMarketTime || 0,
       t: [], o: [], h: [], l: [], c: [], v: [],
     };
-    const rd = x => Math.round(x * 1e4) / 1e4;
     R.timestamp.forEach((t, i) => {
       const c = q.close && q.close[i];
       if (c == null) return;
@@ -120,9 +119,68 @@ async function chart(s, r) {
     const p = m.currentTradingPeriod && m.currentTradingPeriod.regular;
     const now = Date.now() / 1000;
     out.open = !!(p && now >= p.start && now < p.end);
+    if (interval === '1d' || interval === '1wk') await fillLast(out, m, interval, host);
     return out;
   }
   return { error: lastErr };
+}
+
+const rd = x => Math.round(x * 1e4) / 1e4;
+const DAY = 86400;
+
+// Yahoo 일봉·주봉은 장 마감 뒤에도 몇 시간 동안 마지막 거래일 봉이 빠지거나(종가 null) 이전 값으로 남는 일이 있음
+// (예: 2026-10-19 MRVL — meta 현재가 237.09·10/19 16:00인데 일봉은 10/16 227.83에서 끝남).
+// meta의 현재가·시각(regularMarketPrice·regularMarketTime)이 마지막 봉보다 새로우면 그날(그 주) 봉을 추가하고,
+// 같은 날(주)이면 종가를 현재가로 맞추고 고가·저가를 당일 고저로 넓힘. out.fill = 'add' | 'patch' (진단용)
+async function fillLast(out, m, interval, host) {
+  const px = m.regularMarketPrice, at = m.regularMarketTime, n = out.t.length;
+  if (!(px > 0) || !at || !n || at > Date.now() / 1000 + 600) return;
+  const g = out.gmt, day = ts => Math.floor((ts + g) / DAY);
+  const weekly = interval === '1wk';
+  const unit = ts => (weekly ? Math.floor((day(ts) + 3) / 7) : day(ts)); // 1970-01-01은 목요일 → +3이면 월요일 시작 주
+  const i = n - 1, du = unit(at) - unit(out.t[i]);
+  if (du < 0 || du > (weekly ? 2 : 10)) return;
+  const hi = m.regularMarketDayHigh > 0 ? m.regularMarketDayHigh : px;
+  const lo = m.regularMarketDayLow > 0 ? m.regularMarketDayLow : px;
+  const vol = m.regularMarketVolume > 0 ? m.regularMarketVolume : 0;
+  if (du === 0) {
+    if (out.c[i] === rd(px) && out.h[i] >= hi && out.l[i] <= lo) return;
+    out.c[i] = rd(px); out.h[i] = rd(Math.max(out.h[i], hi, px)); out.l[i] = rd(Math.min(out.l[i], lo, px));
+    if (!weekly && vol > out.v[i]) out.v[i] = vol;
+    out.fill = 'patch';
+    return;
+  }
+  // 빠진 봉 추가. 시가는 그날 5분봉 첫 값, 못 받으면 직전 종가
+  const D = await sessionBar(host, out.s, at, day);
+  const o = D ? D.o : out.c[i];
+  const p = m.currentTradingPeriod && m.currentTradingPeriod.regular;
+  const t = weekly ? (unit(at) * 7 - 3) * DAY - g : (D ? D.t : (p && day(p.start) === day(at) ? p.start : at));
+  out.t.push(t); out.o.push(rd(o));
+  out.h.push(rd(Math.max(hi, px, o, D ? D.h : 0))); out.l.push(rd(Math.min(lo, px, o, D ? D.l : Infinity)));
+  out.c.push(rd(px)); out.v.push(vol || (D ? D.v : 0));
+  out.fill = 'add';
+}
+
+// 마지막 거래일의 정규장 5분봉을 모아 하루 봉(시가·고가·저가·거래량)으로. 5분간 메모리 캐시
+async function sessionBar(host, s, at, day) {
+  const k = 'D|' + s, hit = MEM.get(k);
+  if (hit && hit.exp > Date.now() && hit.data.at === at) return hit.data.bar;
+  let bar = null;
+  try {
+    const res = await fetch(`https://${host}.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(s)}?range=1d&interval=5m&includePrePost=false`, { headers: UA });
+    const j = res.ok ? await res.json().catch(() => null) : null;
+    const R = j && j.chart && j.chart.result && j.chart.result[0];
+    const q = (R && R.indicators && R.indicators.quote && R.indicators.quote[0]) || {};
+    const d0 = day(at), at_ = (a, i) => (a && a[i] != null ? a[i] : null);
+    ((R && R.timestamp) || []).forEach((t, i) => {
+      const c = at_(q.close, i);
+      if (c == null || day(t) !== d0) return;
+      if (!bar) bar = { t, o: at_(q.open, i) ?? c, h: -Infinity, l: Infinity, v: 0 };
+      bar.h = Math.max(bar.h, at_(q.high, i) ?? c); bar.l = Math.min(bar.l, at_(q.low, i) ?? c); bar.v += at_(q.volume, i) || 0;
+    });
+  } catch (e) { bar = null; }
+  remember(k, { at, bar }, 300);
+  return bar;
 }
 
 /* ---------- 재무·컨센서스 ---------- */
