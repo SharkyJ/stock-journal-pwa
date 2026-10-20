@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-z9kT2YTmAPdlEh6OT+vGNOXn3delZ/ma/3nIg7IoquE=' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; connect-src https://sheets.googleapis.com https://www.googleapis.com https://oauth2.googleapis.com https://accounts.google.com/gsi/ https://*.workers.dev; frame-src https://accounts.google.com/gsi/; img-src 'self' data:; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-yIisMe3pok0ZaaJhkNzTV2QNU7ZAJbNeFl1MTMq3xf0=' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; connect-src https://sheets.googleapis.com https://www.googleapis.com https://oauth2.googleapis.com https://accounts.google.com/gsi/ https://*.workers.dev; frame-src https://accounts.google.com/gsi/; img-src 'self' data:; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
 <meta name="robots" content="noindex,nofollow">
 <meta name="theme-color" content="#0b0f17">
@@ -227,7 +227,7 @@ code{background:var(--bg2);padding:1px 5px;border-radius:5px;font-size:12.5px}
 <script>
 'use strict';
 /* ================= 상수 / 유틸 ================= */
-const VERSION='1.5.3';
+const VERSION='1.5.4';
 const SH='https://sheets.googleapis.com/v4/spreadsheets';
 const SHEETS_SCOPE='https://www.googleapis.com/auth/spreadsheets';
 const SCOPES=SHEETS_SCOPE+' openid email';
@@ -868,6 +868,9 @@ function pxMove(e){
 }
 document.addEventListener('pointermove',pxMove,{passive:true});
 document.addEventListener('pointerdown',pxMove,{passive:true});
+function chartTipHide(el){const t=$('.tip',el),ln=$('line.cur',el);if(t)t.style.display='none';if(ln)ln.style.display='none'}
+document.addEventListener('pointerdown',e=>{$$('.chart').forEach(el=>{if(!el.contains(e.target))chartTipHide(el)})},{passive:true});
+document.addEventListener('pointerout',e=>{if(e.pointerType!=='mouse'||!e.target.closest)return;const el=e.target.closest('.chart');if(el&&!el.contains(e.relatedTarget))chartTipHide(el)},{passive:true});
 setInterval(()=>{if(document.hidden||S.locked||!S.D)return;sgAuto();const h=curStock();if(h)pxEnsure(h)},15e3);
 function chartUrlForm(){
   openModal(`<h3>주가 차트 서버</h3>
@@ -1565,9 +1568,9 @@ function vStock(h){
    <div><span>${MKL[h.mkt]} 내 비중</span><b class="num">${fmtPct(h.wMk,{sign:false})}</b></div><div><span>전체 비중</span><b class="num">${fmtPct(h.wAll,{sign:false})}</b></div></div>
    ${accs.length?`<div class="sect">계좌별 보유</div><div class="row wrapf">${accs.map(([a,q])=>`<span class="chip">${esc(a)} <b class="num">${fmtQty(q)}</b></span>`).join('')}</div>`:''}
    <div class="btns" style="margin-top:16px"><button class="btn buy" data-act="newTrade" data-key="${esc(h.key)}" data-type="매수">매수 기록</button><button class="btn sell" data-act="newTrade" data-key="${esc(h.key)}" data-type="매도" ${h.active?'':'disabled'}>매도 기록</button></div></section>
+  <section class="card"><h2>매매 흐름 <span class="xs faint">● 매수 ● 매도 — 평단 · 현재가</span></h2>${tradeChart(h)}</section>
   ${vPlanCard(h,p)}
   <section class="card" id="sgc">${stratCard(h)}</section>
-  <section class="card"><h2>매매 흐름 <span class="xs faint">● 매수 ● 매도 — 평단 · 현재가</span></h2>${tradeChart(h)}</section>
   <section class="card" style="padding-bottom:6px"><h2>거래 내역 <span class="xs faint">${h.trades.length}건 · 탭하여 수정/회고</span></h2>
    ${trades.length?trades.map(t=>tradeRow(h,t)).join(''):'<div class="empty">거래 기록이 없습니다</div>'}</section>
   <div class="btns"><button class="btn" data-act="toolFor" data-key="${esc(h.key)}" data-val="avg">물타기 계산</button><button class="btn" data-act="toolFor" data-key="${esc(h.key)}" data-val="sell">매도 시뮬</button></div>`;
