@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-u4PRrP2imf+xaXkejSeJWhNyL+A0Ld+IPeKrE5FxRBk=' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; connect-src https://sheets.googleapis.com https://www.googleapis.com https://oauth2.googleapis.com https://accounts.google.com/gsi/ https://*.workers.dev; frame-src https://accounts.google.com/gsi/; img-src 'self' data:; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-3dQ8hdkvtkt0HLoDtfQbECCugoQonpqbcwOag69YNms=' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; connect-src https://sheets.googleapis.com https://www.googleapis.com https://oauth2.googleapis.com https://accounts.google.com/gsi/ https://*.workers.dev; frame-src https://accounts.google.com/gsi/; img-src 'self' data:; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
 <meta name="robots" content="noindex,nofollow">
 <meta name="theme-color" content="#0b0f17">
@@ -1830,7 +1830,7 @@ function openTradeForm(o){
   const t=ed||{};const accs=D.acc[mkt];const defAcc=ed?ed.acc:(h&&h.trades.length?h.trades[h.trades.length-1].acc:accs[0]);
   openModal(`<h3>${ed?'거래 수정':'거래 기록'}</h3>
    ${ed?'':`<div style="margin-bottom:12px">${['KR','US'].map(m=>`<button class="chip ${mkt===m?'on':''}" data-act="tfMkt" data-val="${m}">${MKL[m]}</button>`).join(' ')}</div>`}
-   <label class="fld"><span>종목</span><select name="key" ${ed?'disabled':''} data-tf>${h?'':'<option value="">선택</option>'}${D.mk[mkt].holdings.map(x=>`<option value="${esc(x.key)}" ${x.key===TF.key?'selected':''}>${esc(x.tab)}${x.active?` (${fmtQty(x.qty)}주)`:' (청산)'}</option>`).join('')}<option value="__new">＋ 새 종목 추가…</option></select></label>
+   <label class="fld"><span>종목</span><select name="key" ${ed?'disabled':''} data-tf>${h?'':'<option value="">선택</option>'}${D.mk[mkt].holdings.map(x=>`<option value="${esc(x.key)}" ${x.key===TF.key?'selected':''}>${esc(x.tab)}${x.active?` (${fmtQty(x.qty)}주)`:' (정리)'}</option>`).join('')}<option value="__new">＋ 새 종목 추가…</option></select></label>
    <div class="seg full" style="margin-bottom:12px"><button data-act="tfType" data-val="매수" class="${TF.type==='매수'?'on':''}">매수</button><button data-act="tfType" data-val="매도" class="${TF.type==='매도'?'on':''}">매도</button></div>
    <div class="f2"><label class="fld"><span>거래일</span><input type="date" name="date" value="${ed?sToStr(ed.date):todayStr()}" data-tf></label>
    <label class="fld"><span>계좌</span><select name="acc" data-tf>${[...new Set([...accs,defAcc].filter(Boolean))].map(a=>`<option ${a===defAcc?'selected':''}>${esc(a)}</option>`).join('')}</select></label></div>
