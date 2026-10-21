@@ -21,6 +21,9 @@ Google Sheets 기반 주식일지(주식일지 / 국장_주식일지 / 미장_�
   - 신호는 조건 충족 여부일 뿐 매수·매도 권유가 아닙니다
 - **보안**: Google 로그인(허용 계정 1개) + PIN/지문 잠금, 자동 잠금 시 화면 데이터 삭제
 
+## 0. 시트 양식
+처음부터 시작한다면 [`templates/`](templates/)의 양식(주식일지 · 국장_주식일지 · 미장_주식일지 .xlsx, 가상 샘플 데이터 포함)을 Google Drive에 올려 Google Sheets로 변환해 쓰세요. 설정 순서는 [templates/README.md](templates/README.md)에 있습니다.
+
 ## 1. Google Cloud 설정 (최초 1회, 약 5분)
 1. https://console.cloud.google.com → 새 프로젝트 생성
 2. **API 및 서비스 → 라이브러리 → Google Sheets API → 사용**
