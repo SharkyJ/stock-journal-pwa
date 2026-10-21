@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-yIisMe3pok0ZaaJhkNzTV2QNU7ZAJbNeFl1MTMq3xf0=' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; connect-src https://sheets.googleapis.com https://www.googleapis.com https://oauth2.googleapis.com https://accounts.google.com/gsi/ https://*.workers.dev; frame-src https://accounts.google.com/gsi/; img-src 'self' data:; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-DU6wlwzCKXbyYrZzE4jTEr7X2y64OsJ/09q9xXuQZoY=' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; connect-src https://sheets.googleapis.com https://www.googleapis.com https://oauth2.googleapis.com https://accounts.google.com/gsi/ https://*.workers.dev; frame-src https://accounts.google.com/gsi/; img-src 'self' data:; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
 <meta name="robots" content="noindex,nofollow">
 <meta name="theme-color" content="#0b0f17">
@@ -227,7 +227,7 @@ code{background:var(--bg2);padding:1px 5px;border-radius:5px;font-size:12.5px}
 <script>
 'use strict';
 /* ================= 상수 / 유틸 ================= */
-const VERSION='1.5.4';
+const VERSION='1.6.0';
 const SH='https://sheets.googleapis.com/v4/spreadsheets';
 const SHEETS_SCOPE='https://www.googleapis.com/auth/spreadsheets';
 const SCOPES=SHEETS_SCOPE+' openid email';
@@ -298,7 +298,7 @@ class AuthErr extends Error{constructor(m){super(m||'Google 로그인이 필요�
 
 /* ================= 상태 ================= */
 const S={cfg:Object.assign({},DEF,LS.get('sj.cfg',{})),token:null,tokenExp:0,email:'',D:null,locked:true,loading:false,err:'',needAuth:false,hiddenAt:0,lastAct:Date.now(),pin:'',pinMode:'unlock',pinFirst:'',pinMsg:'',busy:false,modal:null,
-  v:{tab:'home',stock:null,ccy:'KRW',hf:'all',hs:'weight',closed:'0',an:'trend',per:'3M',tool:'avg',rbs:'KR',rbc:'1',mr:'KR',st:'KR',sm:'KR',fm:'KR',tk:'',cr:'3mo',sg:'sig',pz:'all',su:'all',ov:'ma',ok:'d'}};
+  v:{tab:'home',stock:null,ccy:'KRW',hf:'all',hs:'weight',cm:'all',cs:'recent',an:'trend',per:'3M',tool:'avg',rbs:'KR',rbc:'1',mr:'KR',st:'KR',sm:'KR',fm:'KR',tk:'',cr:'3mo',sg:'sig',pz:'all',su:'all',ov:'ma',ok:'d'}};
 const saveCfg=()=>LS.set('sj.cfg',S.cfg);
 const configured=()=>S.cfg.demo||(S.cfg.clientId&&S.cfg.mainId&&S.cfg.krId&&S.cfg.usId);
 const demoOpen=()=>S.cfg.demo&&!LS.get('sj.pin');
@@ -1532,8 +1532,9 @@ function vMovers(){
 
 /* ---------- 종목 목록 ---------- */
 function vHold(){
-  const D=S.D,f=S.v.hf;let hs=D.hold.filter(h=>f==='all'||h.mkt===f);
-  const act=hs.filter(h=>h.active),closed=hs.filter(h=>!h.active);
+  const D=S.D,f=S.v.hf;if(f==='closed')return vClosed();
+  let hs=D.hold.filter(h=>f==='all'||h.mkt===f);
+  const act=hs.filter(h=>h.active),closed=hs.filter(h=>!h.active&&h.trades.length);
   const sorters={weight:(a,b)=>b.vK-a.vK,rr:(a,b)=>b.rr-a.rr,pnl:(a,b)=>b.pK-a.pK,name:(a,b)=>a.tab.localeCompare(b.tab,'ko')};act.sort(sorters[S.v.hs]);
   let head='';
   if(f==='all'){const v=sum(act,'vK'),c=sum(act,'cK');head=`<div class="row sb"><div><div class="lbl">보유 평가금액 (원화 환산)</div><div class="num strong" style="font-size:20px">${fmtMoney(v,'KRW')}</div></div><div class="num ${cls(v-c)} strong" style="text-align:right">${fmtMoney(v-c,'KRW',{sign:true})}<div class="sm">${fmtPct(c?(v-c)/c:0)}</div></div></div>`}
@@ -1542,12 +1543,42 @@ function vHold(){
     <div class="hl"><div class="hn">${esc(h.name)} ${f==='all'?`<i class="badge ${h.mkt==='KR'?'kr':'us'}">${MKL[h.mkt]}</i>`:''}${h.mismatch||h.unsorted?' <i class="badge warn">확인</i>':''}${p&&p.target&&h.price>=p.target?' <i class="badge ok">목표</i>':''}${p&&p.stop&&h.price<=p.stop?' <i class="badge warn">손절</i>':''}</div>
     <div class="hs muted num">${esc(h.ticker)} · ${fmtQty(h.qty)}주 · 평단 ${fmtMoney(h.avg,h.ccy)}</div><div class="wbar"><i style="width:${Math.min(100,w*100).toFixed(1)}%"></i></div></div>
     <div class="hr"><div class="num strong">${fmtMoney(h.value,h.ccy,{dec:h.ccy==='USD'?2:0})}</div><div class="num sm ${cls(h.pnl)}">${fmtMoney(h.pnl,h.ccy,{sign:true})}</div><div class="num xs ${cls(h.rr)}">${fmtPct(h.rr)} · <span class="muted">${fmtPct(w,{sign:false})}</span></div></div></button>`};
-  return `<div style="margin-top:12px">${seg('hf',[['all','전체'],['KR','국장'],['US','미장']],'full')}</div>
+  return `<div style="margin-top:12px">${seg('hf',[['all','전체'],['KR','국장'],['US','미장'],['closed','정리종목']],'full')}</div>
    <section class="card">${head}</section>
    <div class="row sb" style="margin:4px 2px">${chips('hs',[['weight','비중순'],['rr','수익률순'],['pnl','손익순'],['name','이름순']])}</div>
    <section class="card" style="padding:4px 16px">${act.length?act.map(item).join(''):'<div class="empty">보유 종목이 없습니다</div>'}</section>
-   ${closed.length?`<button class="sect row" data-act="set" data-k="closed" data-val="${S.v.closed==='1'?'0':'1'}">청산 종목 ${closed.length}개 ${S.v.closed==='1'?'▲':'▼'}</button>${S.v.closed==='1'?`<section class="card" style="padding:4px 16px">${closed.map(h=>`<button class="hrow" data-act="stock" data-key="${esc(h.key)}"><div class="hl"><div class="hn">${esc(h.name)}</div><div class="hs muted">${esc(h.ticker)} · 거래 ${h.trades.length}건</div></div><div class="hr"><div class="xs muted">누적 실현손익</div><div class="num strong ${cls(h.realized)}">${fmtMoney(h.realized,h.ccy,{sign:true})}</div></div></button>`).join('')}</section>`:''}`:''}
+   ${closed.length?`<button class="sect row" data-act="set" data-k="hf" data-val="closed">정리종목 ${closed.length}개 보기 ›</button>`:''}
    <button class="btn block" style="margin-top:6px" data-act="newTicker" data-mkt="${f==='all'?'KR':f}">＋ 새 종목 탭 추가</button>`;
+}
+/* 정리종목: 보유수량 0 (전량 매도) */
+function closedInfo(h){
+  const buys=h.trades.filter(t=>t.type==='매수'),sells=h.trades.filter(t=>t.type==='매도');
+  const buy=buys.reduce((a,t)=>a+num(t.amount),0),sell=sells.reduce((a,t)=>a+num(t.amount),0);
+  const ds=h.trades.map(t=>num(t.date)).filter(Boolean);
+  const first=ds.length?Math.min(...ds):0,last=sells.length?Math.max(...sells.map(t=>num(t.date))):(ds.length?Math.max(...ds):0);
+  /* 마지막 보유 구간: 수량이 0에서 시작해 다시 0이 된 구간 */
+  let st=0,pst=0;h.trades.forEach(t=>{const pc=num(t.cum)+(t.type==='매도'?Math.abs(num(t.qty)):-Math.abs(num(t.qty)));if(Math.abs(pc)<1e-9&&t.type==='매수')st=num(t.date);if(Math.abs(num(t.cum))<1e-9&&t.type==='매도')pst=st});
+  return {buy,sell,first,last,lastStart:pst||first,days:last&&(pst||first)?Math.round(last-(pst||first)):0,rate:buy?h.realized/buy:0,nb:buys.length,ns:sells.length};
+}
+function vClosed(){
+  const D=S.D,m=S.v.cm||'all';
+  const all=D.hold.filter(h=>!h.active&&h.trades.length);
+  const hs=all.filter(h=>m==='all'||h.mkt===m);const empty=D.hold.filter(h=>!h.active&&!h.trades.length&&(m==='all'||h.mkt===m));
+  const so={recent:(a,b)=>closedInfo(b).last-closedInfo(a).last,real:(a,b)=>(b.realized*(b.ccy==='USD'?D.fx:1))-(a.realized*(a.ccy==='USD'?D.fx:1)),rate:(a,b)=>closedInfo(b).rate-closedInfo(a).rate,name:(a,b)=>a.tab.localeCompare(b.tab,'ko')};
+  hs.sort(so[S.v.cs]||so.recent);
+  const tot=mk=>{const x=hs.filter(h=>h.mkt===mk);return {n:x.length,r:sum(x,'realized'),b:x.reduce((a,h)=>a+closedInfo(h).buy,0),w:x.filter(h=>h.realized>0).length}};
+  const blk=(mk)=>{const t=tot(mk),cc=MCCY[mk];return t.n?`<div><div class="lbl">${MKL[mk]} 정리 ${t.n}개 · 수익 ${t.w} / 손실 ${t.n-t.w}</div><div class="num strong ${cls(t.r)}" style="font-size:19px">${fmtMoney(t.r,cc,{sign:true})}</div><div class="xs muted">누적 매수 ${fmtShort(t.b,cc)} 대비 <b class="${cls(t.r)}">${fmtPct(t.b?t.r/t.b:0,{d:2})}</b></div></div>`:''};
+  const head=hs.length?[m!=='US'?blk('KR'):'',m!=='KR'?blk('US'):''].filter(Boolean).join('<div style="height:10px"></div>'):'<div class="muted sm">정리된 종목이 없습니다</div>';
+  const item=h=>{const ci=closedInfo(h);return `<button class="hrow" data-act="stock" data-key="${esc(h.key)}">
+    <div class="hl"><div class="hn">${esc(h.name)} ${m==='all'?`<i class="badge ${h.mkt==='KR'?'kr':'us'}">${MKL[h.mkt]}</i>`:''}${h.mismatch||h.unsorted?' <i class="badge warn">확인</i>':''}</div>
+    <div class="hs muted num">${esc(h.ticker)} · 매수 ${ci.nb} / 매도 ${ci.ns}건</div><div class="xs faint num">${ci.lastStart?sToStr(ci.lastStart):''} → ${ci.last?sToStr(ci.last):''}${ci.days?` (${ci.days}일)`:''}</div></div>
+    <div class="hr"><div class="xs muted">실현손익</div><div class="num strong ${cls(h.realized)}">${fmtMoney(h.realized,h.ccy,{sign:true})}</div><div class="num xs ${cls(h.realized)}">${fmtPct(ci.rate,{d:2})} <span class="muted">/ 매수 ${fmtShort(ci.buy,h.ccy)}</span></div></div></button>`};
+  return `<div style="margin-top:12px">${seg('hf',[['all','전체'],['KR','국장'],['US','미장'],['closed','정리종목']],'full')}</div>
+   <section class="card">${head}<div class="xs faint" style="margin-top:8px">전량 매도해 보유수량이 0인 종목 · 수익률 = 실현손익 ÷ 누적 매수금액 · 기간은 마지막 보유 구간</div></section>
+   <div class="row sb" style="margin:4px 2px;gap:8px">${seg('cm',[['all','전체'],['KR','국장'],['US','미장']])}</div>
+   <div class="row sb" style="margin:4px 2px">${chips('cs',[['recent','최근 정리순'],['real','실현손익순'],['rate','수익률순'],['name','이름순']])}</div>
+   <section class="card" style="padding:4px 16px">${hs.length?hs.map(item).join(''):'<div class="empty">정리종목이 없습니다</div>'}</section>
+   ${empty.length?`<div class="sect">거래 없는 탭 ${empty.length}개</div><section class="card" style="padding:4px 16px">${empty.map(h=>`<button class="hrow" data-act="stock" data-key="${esc(h.key)}"><div class="hl"><div class="hn">${esc(h.name)}</div><div class="hs muted">${esc(h.ticker)}</div></div><div class="hr"><div class="xs muted">거래 없음</div></div></button>`).join('')}</section>`:''}`;
 }
 
 /* ---------- 종목 상세 ---------- */
