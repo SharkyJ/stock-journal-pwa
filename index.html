@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-rWL7BmDU6IRJieG/LrXLsYk4VS8yp32XlDDAD7xd6uk=' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; connect-src https://sheets.googleapis.com https://www.googleapis.com https://oauth2.googleapis.com https://accounts.google.com/gsi/ https://*.workers.dev; frame-src https://accounts.google.com/gsi/; img-src 'self' data:; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-ftaq7vabXJL/91dGftZfJopGjLC+/tdFkLJip0y4XE8=' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; connect-src https://sheets.googleapis.com https://www.googleapis.com https://oauth2.googleapis.com https://accounts.google.com/gsi/ https://*.workers.dev; frame-src https://accounts.google.com/gsi/; img-src 'self' data:; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
 <meta name="robots" content="noindex,nofollow">
 <meta name="theme-color" content="#0b0f17">
@@ -227,7 +227,7 @@ code{background:var(--bg2);padding:1px 5px;border-radius:5px;font-size:12.5px}
 <script>
 'use strict';
 /* ================= 상수 / 유틸 ================= */
-const VERSION='1.6.1';
+const VERSION='1.6.2';
 const SH='https://sheets.googleapis.com/v4/spreadsheets';
 const SHEETS_SCOPE='https://www.googleapis.com/auth/spreadsheets';
 const SCOPES=SHEETS_SCOPE+' openid email';
@@ -298,7 +298,7 @@ class AuthErr extends Error{constructor(m){super(m||'Google 로그인이 필요�
 
 /* ================= 상태 ================= */
 const S={cfg:Object.assign({},DEF,LS.get('sj.cfg',{})),token:null,tokenExp:0,email:'',D:null,locked:true,loading:false,err:'',needAuth:false,hiddenAt:0,lastAct:Date.now(),pin:'',pinMode:'unlock',pinFirst:'',pinMsg:'',busy:false,modal:null,
-  v:{tab:'home',stock:null,ccy:'KRW',hf:'all',hs:'weight',cm:'all',cs:'recent',an:'trend',per:'3M',tool:'avg',rbs:'KR',rbc:'1',mr:'KR',st:'KR',sm:'KR',fm:'KR',tk:'',cr:'3mo',sg:'sig',pz:'all',su:'all',ov:'ma',ok:'d'}};
+  v:{tab:'home',stock:null,ccy:'KRW',hf:'all',al:'all',hs:'weight',cm:'all',cs:'recent',an:'trend',per:'3M',tool:'avg',rbs:'KR',rbc:'1',mr:'KR',st:'KR',sm:'KR',fm:'KR',tk:'',cr:'3mo',sg:'sig',pz:'all',su:'all',ov:'ma',ok:'d'}};
 const saveCfg=()=>LS.set('sj.cfg',S.cfg);
 const configured=()=>S.cfg.demo||(S.cfg.clientId&&S.cfg.mainId&&S.cfg.krId&&S.cfg.usId);
 const demoOpen=()=>S.cfg.demo&&!LS.get('sj.pin');
@@ -1511,14 +1511,25 @@ function mkCard(m){
    ${m==='US'?`<div class="xs faint" style="margin-top:6px">≈ ${fmtMoney(S.D.sum.USKRW.total,'KRW')}</div>`:''}</button>`;
 }
 function vAlloc(){
-  const D=S.D;const act=D.hold.filter(h=>h.active).sort((a,b)=>b.vK-a.vK);
-  const cashK=D.sum.TOT.cash;const top=act.slice(0,7);const rest=act.slice(7);
-  const segs=top.map((h,i)=>({l:h.tab,v:h.vK,c:PAL[i%PAL.length]}));if(rest.length)segs.push({l:`기타 ${rest.length}종목`,v:sum(rest,'vK'),c:'#7d8799'});if(cashK>0)segs.push({l:'예수금',v:cashK,c:'#3a4458'});
-  const tot=sum(segs,'v')||1;const kr=D.sum.KR.value,us=D.sum.USKRW.value;const all=kr+us+cashK||1;
-  return `<section class="card"><h2>자산 배분 <span class="xs faint">원화 환산 · 예수금 포함</span></h2>
-   <div class="donutw">${donut(segs,['종목수',act.length+'개'])}<div class="legend" style="grid-template-columns:1fr;flex:1;min-width:0">${segs.map(s=>`<div><s style="background:${s.c}"></s><span>${esc(s.l)}</span><b class="num">${fmtPct(s.v/tot,{sign:false})}</b></div>`).join('')}</div></div>
-   <div class="stack"><i style="width:${kr/all*100}%;background:var(--up)"></i><i style="width:${us/all*100}%;background:var(--dn)"></i><i style="width:${cashK/all*100}%;background:#7d8799"></i></div>
-   <div class="row sb xs muted"><span><b class="up">●</b> 국장 ${fmtPct(kr/all,{sign:false})}</span><span><b class="dn">●</b> 미장 ${fmtPct(us/all,{sign:false})}</span><span><b style="color:#7d8799">●</b> 예수금 ${fmtPct(cashK/all,{sign:false})}</span></div></section>`;
+  const D=S.D,m=S.v.al||'all',isAll=m==='all';
+  const act=D.hold.filter(h=>h.active&&(isAll||h.mkt===m)).sort(isAll?(a,b)=>b.vK-a.vK:(a,b)=>b.value-a.value);
+  const val=h=>isAll?h.vK:h.value,cc=isAll?'KRW':MCCY[m];
+  const cash=isAll?D.sum.TOT.cash:D.sum[m].cash;const top=act.slice(0,7);const rest=act.slice(7);
+  const segs=top.map((h,i)=>({l:h.tab,v:val(h),c:PAL[i%PAL.length]}));if(rest.length)segs.push({l:`기타 ${rest.length}종목`,v:rest.reduce((x,h)=>x+val(h),0),c:'#7d8799'});if(cash>0)segs.push({l:'예수금',v:cash,c:'#3a4458'});
+  const tot=sum(segs,'v')||1;
+  const sw=seg('al',[['all','총 자산'],['KR','국장'],['US','미장']],'full');
+  const sub=isAll?'원화 환산 · 예수금 포함':`${cc} · 예수금 포함`;
+  let bar;
+  if(isAll){const kr=D.sum.KR.value,us=D.sum.USKRW.value;const all=kr+us+cash||1;
+    bar=`<div class="stack"><i style="width:${kr/all*100}%;background:var(--up)"></i><i style="width:${us/all*100}%;background:var(--dn)"></i><i style="width:${cash/all*100}%;background:#7d8799"></i></div>
+   <div class="row sb xs muted"><span><b class="up">●</b> 국장 ${fmtPct(kr/all,{sign:false})}</span><span><b class="dn">●</b> 미장 ${fmtPct(us/all,{sign:false})}</span><span><b style="color:#7d8799">●</b> 예수금 ${fmtPct(cash/all,{sign:false})}</span></div>`}
+  else{const v=D.sum[m].value,all=v+cash||1,col=m==='KR'?'var(--up)':'var(--dn)';
+    bar=`<div class="stack"><i style="width:${v/all*100}%;background:${col}"></i><i style="width:${cash/all*100}%;background:#7d8799"></i></div>
+   <div class="row sb xs muted"><span><b style="color:${col}">●</b> 주식 ${fmtPct(v/all,{sign:false})} · ${fmtShort(v,cc)}</span><span><b style="color:#7d8799">●</b> 예수금 ${fmtPct(cash/all,{sign:false})} · ${fmtShort(cash,cc)}</span></div>`}
+  return `<section class="card"><h2>자산 배분 <span class="xs faint">${sub}</span></h2>
+   <div style="margin-bottom:12px">${sw}</div>
+   ${segs.length?`<div class="donutw">${donut(segs,['종목수',act.length+'개'])}<div class="legend" style="grid-template-columns:1fr;flex:1;min-width:0">${segs.map(s=>`<div><s style="background:${s.c}"></s><span>${esc(s.l)}</span><b class="num">${fmtPct(s.v/tot,{sign:false})}</b></div>`).join('')}</div></div>`:'<div class="empty">보유 자산이 없습니다</div>'}
+   ${bar}</section>`;
 }
 function planAlerts(){
   const D=S.D,out=[];
