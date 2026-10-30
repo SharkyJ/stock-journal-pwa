@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-ftaq7vabXJL/91dGftZfJopGjLC+/tdFkLJip0y4XE8=' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; connect-src https://sheets.googleapis.com https://www.googleapis.com https://oauth2.googleapis.com https://accounts.google.com/gsi/ https://*.workers.dev; frame-src https://accounts.google.com/gsi/; img-src 'self' data:; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-V0MHObEVh2TzWHLSQt77nNDZBuZmfFp0tmJabTQy1WA=' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; connect-src https://sheets.googleapis.com https://www.googleapis.com https://oauth2.googleapis.com https://accounts.google.com/gsi/ https://*.workers.dev; frame-src https://accounts.google.com/gsi/; img-src 'self' data:; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
 <meta name="robots" content="noindex,nofollow">
 <meta name="theme-color" content="#0b0f17">
@@ -227,7 +227,7 @@ code{background:var(--bg2);padding:1px 5px;border-radius:5px;font-size:12.5px}
 <script>
 'use strict';
 /* ================= 상수 / 유틸 ================= */
-const VERSION='1.6.2';
+const VERSION='1.7.0';
 const SH='https://sheets.googleapis.com/v4/spreadsheets';
 const SHEETS_SCOPE='https://www.googleapis.com/auth/spreadsheets';
 const SCOPES=SHEETS_SCOPE+' openid email';
@@ -301,7 +301,7 @@ const S={cfg:Object.assign({},DEF,LS.get('sj.cfg',{})),token:null,tokenExp:0,ema
   v:{tab:'home',stock:null,ccy:'KRW',hf:'all',al:'all',hs:'weight',cm:'all',cs:'recent',an:'trend',per:'3M',tool:'avg',rbs:'KR',rbc:'1',mr:'KR',st:'KR',sm:'KR',fm:'KR',tk:'',cr:'3mo',sg:'sig',pz:'all',su:'all',ov:'ma',ok:'d'}};
 const saveCfg=()=>LS.set('sj.cfg',S.cfg);
 const configured=()=>S.cfg.demo||(S.cfg.clientId&&S.cfg.mainId&&S.cfg.krId&&S.cfg.usId);
-const demoOpen=()=>S.cfg.demo&&!LS.get('sj.pin');
+const demoOpen=()=>!!S.cfg.demo;
 
 /* ================= 계산 엔진 (시트 수식과 동일) ================= */
 function feeRule(m,acc){
@@ -1393,8 +1393,6 @@ function sigRecent(h){const D=S.D;if(!D.has.signal)return '';const F=spP().fwd,r
 function render(){
   const root=$('#root');
   if(!configured()){root.innerHTML=vSetup();return}
-  if(!LS.get('sj.pin')&&!S.cfg.demo){root.innerHTML=vPin('set');return}
-  if(S.locked&&!demoOpen()){root.innerHTML=vPin('unlock');return}
   let body;
   if(S.v.tab==='settings')body=vSettings();
   else if(!S.D){body=vConnect()}
@@ -1403,7 +1401,6 @@ function render(){
   const sub=S.cfg.demo?'데모 모드':S.D?`${p2(S.D.asOf.getMonth()+1)}.${p2(S.D.asOf.getDate())} ${p2(S.D.asOf.getHours())}:${p2(S.D.asOf.getMinutes())} 기준`:'';
   root.innerHTML=`<header class="top"><div class="in"><h1>주식일지 <small>${esc(sub)}</small></h1>
     <button class="ib ${S.loading?'spin':''}" data-act="refresh" aria-label="새로고침">${IC.ref}</button>
-    ${demoOpen()?'':`<button class="ib" data-act="lock" aria-label="잠금">${IC.lock}</button>`}
     <button class="ib" data-act="tab" data-val="settings" aria-label="설정">${IC.gear}</button></div></header>
     <main class="wrap">${S.cfg.demo&&S.D&&S.v.tab==='home'&&!S.v.stock?vDemoBar():''}${S.err&&S.D?`<div class="note warn">${esc(S.err)}</div>`:''}${body}</main>
     ${S.D?`<button class="fab" data-act="newTrade" aria-label="거래 기록">${IC.plus}</button>`:''}
@@ -1426,7 +1423,7 @@ function vSetup(){
   const c=S.cfg;
   return `<div class="setup"><div class="lock" style="min-height:auto;padding:0;align-items:flex-start"><div class="logo">${IC.logo}</div></div>
   <h1>주식일지</h1><p class="muted sm">국장·미장 보유 종목과 투자 원금 대비 총자산을 Google Sheets로 관리하는 개인 주식일지입니다.</p>
-  <div class="card"><h2>먼저 둘러보기</h2><p class="muted sm" style="margin:0 0 12px">가상의 예시 데이터로 대시보드, 종목, 현금·환전, 분석, 계산기를 모두 체험합니다. Google 로그인과 PIN 설정 없이 바로 열리고, 실제 시트에는 접근하지 않습니다.</p><button class="btn pri block" data-act="demoOn">데모 모드로 시작</button></div>
+  <div class="card"><h2>먼저 둘러보기</h2><p class="muted sm" style="margin:0 0 12px">가상의 예시 데이터로 대시보드, 종목, 현금·환전, 분석, 계산기를 모두 체험합니다. Google 로그인 없이 바로 열리고, 실제 시트에는 접근하지 않습니다.</p><button class="btn pri block" data-act="demoOn">데모 모드로 시작</button></div>
   <h2 style="font-size:17px;margin:22px 2px 6px">내 시트 연결</h2><p class="muted sm">데이터는 내 Google Drive의 스프레드시트에만 저장됩니다. 이 앱은 서버가 없고, 브라우저가 Google Sheets API에 직접 접속합니다. 입력값은 이 기기에만 저장됩니다.</p>
   <div class="card">
    <label class="fld"><span>주식일지 (메인) 시트 URL 또는 ID</span><input name="mainId" value="${esc(c.mainId)}" autocomplete="off" placeholder="https://docs.google.com/spreadsheets/d/…"></label>
@@ -1435,7 +1432,7 @@ function vSetup(){
    <label class="fld"><span>OAuth 클라이언트 ID</span><input name="clientId" value="${esc(c.clientId)}" autocomplete="off" placeholder="xxxx.apps.googleusercontent.com"><div class="hint">Google Cloud Console에서 발급 (README 1단계)</div></label>
    <label class="fld"><span>허용할 Google 계정</span><input name="email" type="email" value="${esc(c.email)}" autocomplete="off" placeholder="시트 소유 계정"><div class="hint">이 계정 외의 로그인은 거부합니다. 비워두면 첫 로그인 계정으로 고정됩니다.</div></label>
    <div class="err" id="setupErr"></div>
-   <button class="btn pri block" data-act="saveSetup">저장하고 PIN 설정</button>
+   <button class="btn pri block" data-act="saveSetup">저장하고 연결</button>
   </div>
   <div class="card"><h2>설정 순서</h2><ol>
    <li>Google Cloud Console → 새 프로젝트 → <b>Google Sheets API</b> 사용 설정</li>
@@ -1834,11 +1831,8 @@ function vSettings(){
    <div class="set"><div>모드<div class="d">${c.demo?'데모 (가상 데이터)':'Google Sheets 실시간'}</div></div>${c.demo?`<button class="btn sm" data-act="demoOff">데모 종료</button>`:''}</div>
    ${c.demo?'':`<div class="set"><div>계정<div class="d">${esc(S.email||c.email||'-')}</div></div>${tokenOk()?`<button class="btn sm" data-act="logout">로그아웃</button>`:`<button class="btn sm pri" data-act="connect">연결</button>`}</div>
    <div class="set"><div>스프레드시트<div class="d num">메인 ${mask(c.mainId)} · 국장 ${mask(c.krId)} · 미장 ${mask(c.usId)}</div></div><button class="btn sm" data-act="editSetup">변경</button></div>`}</section>
-  ${demoOpen()?'':`  <section class="card"><h2>보안</h2>
-   <div class="set"><div>자동 잠금<div class="d">백그라운드 전환·무입력 후 잠금, 화면 데이터 삭제</div></div><select data-cfg="lockMin">${[[0,'즉시'],[1,'1분'],[3,'3분'],[5,'5분'],[10,'10분']].map(([v,l])=>`<option value="${v}" ${c.lockMin==v?'selected':''}>${l}</option>`).join('')}</select></div>
-   <div class="set"><div>지문 / 기기 잠금으로 해제<div class="d">${LS.get('sj.bio')?'등록됨':'미등록'}</div></div>${LS.get('sj.bio')?`<button class="btn sm" data-act="bioOff">해제</button>`:`<button class="btn sm" data-act="bioOn">등록</button>`}</div>
-   <div class="set"><div>PIN 변경</div><button class="btn sm" data-act="pinChange">변경</button></div>
-   <div class="set"><div>이 기기에서 모두 지우기<div class="d">설정·PIN·지문 등록 삭제 (시트 데이터는 그대로)</div></div><button class="btn sm danger" data-act="wipe">삭제</button></div></section>`}
+  ${demoOpen()?'':`  <section class="card"><h2>기기 데이터</h2>
+   <div class="set"><div>이 기기에서 모두 지우기<div class="d">설정 삭제 (시트 데이터는 그대로)</div></div><button class="btn sm danger" data-act="wipe">삭제</button></div></section>`}
   ${vFeeSettings()}
   ${vFxSettings()}
   <section class="card"><h2>기능</h2>
@@ -2056,9 +2050,9 @@ const A={
   resetCfg(){S.cfg.demo=false;S.cfg.mainId='';saveCfg();S.pinFirst='';S.pin='';render()},
   saveSetup(){const v=fv($('.setup'));const c={mainId:parseId(v.mainId),krId:parseId(v.krId),usId:parseId(v.usId),clientId:str(v.clientId),email:str(v.email).toLowerCase()};
     const e=$('#setupErr');if(!c.mainId||!c.krId||!c.usId)return e.textContent='시트 3개의 URL 또는 ID를 모두 입력하세요';if(!/\.apps\.googleusercontent\.com$/.test(c.clientId))return e.textContent='OAuth 클라이언트 ID 형식이 올바르지 않습니다';
-    Object.assign(S.cfg,c,{demo:false});saveCfg();loadGIS().catch(()=>{});render()},
+    Object.assign(S.cfg,c,{demo:false});saveCfg();loadGIS().catch(()=>{});unlocked()},
   demoOn(){S.cfg.demo=true;saveCfg();S.v.tab='home';if(demoOpen()){S.locked=false;render();load()}else render()},
-  async demoOff(){if(await confirmBox('데모 종료','데모를 종료하고 실제 시트 연결 화면으로 이동합니다.','종료')){S.cfg.demo=false;saveCfg();S.D=null;S.v.tab='home';if(LS.get('sj.pin'))S.locked=true;Demo.reset();render()}},
+  async demoOff(){if(await confirmBox('데모 종료','데모를 종료하고 실제 시트 연결 화면으로 이동합니다.','종료')){S.cfg.demo=false;saveCfg();S.D=null;S.v.tab='home';Demo.reset();if(configured())unlocked();else render()}},
   editSetup(){setupEditForm()},
   setupEditSave(){const v=fv($('#modal .sheet'));Object.assign(S.cfg,{mainId:parseId(v.mainId),krId:parseId(v.krId),usId:parseId(v.usId),clientId:str(v.clientId),email:str(v.email).toLowerCase()});saveCfg();closeModal();S.token=null;S.D=null;toast('저장했습니다. 다시 연결하세요');render()},
   toggleCfg(el){const k=el.dataset.k;S.cfg[k]=!S.cfg[k];saveCfg();render()},
@@ -2066,7 +2060,7 @@ const A={
   bioOff(){LS.del('sj.bio');toast('해제했습니다');render()},
   pinCancel(){S.pinMode='unlock';S.pinFirst='';S.pin='';S.pinMsg='';S.locked=false;render()},
   pinChange(){S.pinMode='change';S.pinFirst='';S.pin='';S.pinMsg='';S.locked=true;render()},
-  async wipe(){if(await confirmBox('이 기기 데이터 삭제','설정·PIN·지문 등록을 이 기기에서 삭제합니다. 시트 데이터는 그대로입니다.','삭제','danger'))wipeLocal()},
+  async wipe(){if(await confirmBox('이 기기 데이터 삭제','설정을 이 기기에서 삭제합니다. 시트 데이터는 그대로입니다.','삭제','danger'))wipeLocal()},
   newTrade(el){openTradeForm({key:el.dataset.key,type:el.dataset.type,mkt:el.dataset.mkt})},
   tfMkt(el){openTradeForm({mkt:el.dataset.val,type:TF?TF.type:'매수'})},
   tfType(el){TF.type=el.dataset.val;$$('[data-act=tfType]').forEach(b=>b.classList.toggle('on',b.dataset.val===TF.type));const s=$('#tfSave');s.className='btn '+(TF.type==='매수'?'buy':'sell');tfAutoFee();tfPreview()},
@@ -2379,7 +2373,9 @@ function boot(){
   if(window.matchMedia)matchMedia('(prefers-color-scheme: light)').addEventListener('change',applyTheme);
   if('serviceWorker' in navigator&&location.protocol==='https:')navigator.serviceWorker.register('sw.js').catch(()=>{});
   if(configured()&&!S.cfg.demo)loadGIS().catch(()=>{});
+  ['sj.pin','sj.bio','sj.fail'].forEach(LS.del);
   if(demoOpen()){S.locked=false;render();load();return}
+  if(configured()){unlocked();return}
   render();
 }
 boot();
