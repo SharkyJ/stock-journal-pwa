@@ -170,7 +170,7 @@ function syncMeritz() {
     const fk = [sym, kind, q, amt].join('|'), fee = (ovFee[fk] || []).shift() || 0;
     const d = String(o.cntg_ymdh || '').slice(0, 10) || fmt(o.oder_date);
     const tk = tickers[sym] || '';
-    push('MZ|OV|' + o.oder_date + '|' + String(o.oder_no).trim() + '|' + String(o.cntg_no || '').trim(), [
+    push('MZ|OV|' + o.oder_date + '|' + String(o.oder_no).trim() + '|' + String(o.cntg_ymdh || '').replace(/\D/g, '') + '|' + String(o.cntg_no || '').trim(), [
       kind, d, tk || String(o.iscd).trim(), o.kor_isnm || '', q, px, fee, '', amt, '', String(o.crcd || 'USD').trim(),
       tk ? '대기' : '새 종목', '', 'ord ' + o.oder_date + ' ' + (o.cntg_ymdh || '') + ' ' + (o.rctf_cncl_cls_name || '')]);
   });
