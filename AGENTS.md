@@ -4,12 +4,11 @@
 - main에는 직접 push하지 않는다. 기능 브랜치를 만들고 PR을 연다.
 - **에이전트는 PR을 연 뒤 CI(`csp` 체크, `python3 build.py --check`)가 통과하면 직접 merge까지 진행한다.** 별도 승인을 기다리지 않는다. (2026-11-02 SJ 결정)
   - CI가 실패하면 merge하지 않는다. 원인을 고쳐 다시 push한다.
-  - merge 방식은 merge commit을 쓴다. merge가 끝나면 브랜치를 삭제한다.
+  - merge 방식은 merge commit을 쓴다. 이 세션 프록시에서는 브랜치 삭제(API·git push --delete)가 막혀 있으므로 남겨 둔다.
   - 시트 데이터를 파괴하는 변경(대량 수정·삭제·구조 변경)은 merge 전에 SJ에게 확인받는다.
 - Claude 세션에서는 GraphQL(`gh pr create`)이 막혀 있으므로 REST API를 쓴다.
   - PR 생성: `gh api repos/SharkyJ/stock-journal-pwa/pulls -f title=… -f head=… -f base=main -F body=@file`
   - merge: `gh api -X PUT repos/SharkyJ/stock-journal-pwa/pulls/{n}/merge -f merge_method=merge`
-  - 브랜치 삭제: `gh api -X DELETE repos/SharkyJ/stock-journal-pwa/git/refs/heads/{branch}`
 
 ## 빌드·버전
 - `index.html`을 수정하면 `python3 build.py`를 실행한다. 이 스크립트가 CSP 스크립트 해시와 서비스워커 캐시 버전을 다시 계산한다.
