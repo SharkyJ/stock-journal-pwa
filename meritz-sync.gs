@@ -128,7 +128,8 @@ function syncMeritz() {
   const old = sh.getLastRow() > 1 ? sh.getRange(2, 1, sh.getLastRow() - 1, 10).getValues() : [];
   const have = new Set(old.map(r => String(r[0])));
   // 2026-11-02 이전 버전이 해외 매매를 결제일 기준(MZ|TR)으로 기록한 행: 같은 매매를 체결일 기준으로 다시 넣지 않도록 지문 보관
-  const oldTr = new Set(old.filter(r => /^MZ\|TR\|/.test(r[0]) && /^(매수|매도)$/.test(r[4])).map(r => [mzSym_(r[6]), r[4], Number(r[8]), Number(r[9])].join('|')));
+  const oldTr = {};   // 같은 지문이 여러 건일 수 있어 건수로 관리
+  old.filter(r => /^MZ\|TR\|/.test(r[0]) && /^(매수|매도)$/.test(r[4])).forEach(r => { const k = [mzSym_(r[6]), r[4], Number(r[8]), Number(r[9])].join('|'); oldTr[k] = (oldTr[k] || 0) + 1; });
   const tickers = mzTickerMap_();
   const now = "'" + Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd HH:mm');
   const today = Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyyMMdd');
@@ -166,11 +167,12 @@ function syncMeritz() {
     const q = num(o.cntg_dqty), px = num(o.cntg_crnc_prc), amt = num(o.cntg_camt) || Math.round(q * px * 100) / 100;
     if (!kind || !(q > 0)) return;
     const sym = mzSym_(o.iscd), fp = [sym, kind, q, px].join('|');
-    if (oldTr.has(fp)) { oldTr.delete(fp); return; }                       // 이전 버전에서 이미 수신
+    const okey = 'MZ|OV|' + o.oder_date + '|' + String(o.oder_no).trim() + '|' + String(o.cntg_ymdh || '').replace(/\D/g, '') + '|' + String(o.cntg_no || '').trim();
+    if (oldTr[fp] > 0 && !have.has(okey)) { oldTr[fp]--; return; }          // 이전 버전에서 이미 수신
     const fk = [sym, kind, q, amt].join('|'), fee = (ovFee[fk] || []).shift() || 0;
     const d = String(o.cntg_ymdh || '').slice(0, 10) || fmt(o.oder_date);
     const tk = tickers[sym] || '';
-    push('MZ|OV|' + o.oder_date + '|' + String(o.oder_no).trim() + '|' + String(o.cntg_ymdh || '').replace(/\D/g, '') + '|' + String(o.cntg_no || '').trim(), [
+    push(okey, [
       kind, d, tk || String(o.iscd).trim(), o.kor_isnm || '', q, px, fee, '', amt, '', String(o.crcd || 'USD').trim(),
       tk ? '대기' : '새 종목', '', 'ord ' + o.oder_date + ' ' + (o.cntg_ymdh || '') + ' ' + (o.rctf_cncl_cls_name || '')]);
   });
