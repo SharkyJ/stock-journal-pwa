@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-HAKOY9HI8BWmTnURgJbAFBROdGWLz9pGt90T7EI81LY=' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; connect-src https://sheets.googleapis.com https://www.googleapis.com https://oauth2.googleapis.com https://accounts.google.com/gsi/ https://*.workers.dev; frame-src https://accounts.google.com/gsi/; img-src 'self' data:; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-hz3HCZYjviK6k6oFwZwv1cM6nmAXGcmsxMm+fl8sYAQ=' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; connect-src https://sheets.googleapis.com https://www.googleapis.com https://oauth2.googleapis.com https://accounts.google.com/gsi/ https://*.workers.dev; frame-src https://accounts.google.com/gsi/; img-src 'self' data:; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
 <meta name="robots" content="noindex,nofollow">
 <meta name="theme-color" content="#0b0f17">
@@ -227,7 +227,7 @@ code{background:var(--bg2);padding:1px 5px;border-radius:5px;font-size:12.5px}
 <script>
 'use strict';
 /* ================= 상수 / 유틸 ================= */
-const VERSION='1.8.0';
+const VERSION='1.8.1';
 const SH='https://sheets.googleapis.com/v4/spreadsheets';
 const SHEETS_SCOPE='https://www.googleapis.com/auth/spreadsheets';
 const SCOPES=SHEETS_SCOPE+' openid email';
@@ -1678,7 +1678,9 @@ const INB_OPEN=['대기','새 종목','중복의심'];
 function inboxParse(r,row){return {row,key:str(r[0]),at:str(r[1]),broker:str(r[2]),acc:str(r[3]),kind:str(r[4]),date:toSerial(r[5]),ticker:str(r[6]).toUpperCase(),name:str(r[7]),
   qty:num(r[8]),price:num(r[9]),fee:num(r[10]),krw:num(r[11]),usd:num(r[12]),fx:num(r[13]),ccy:str(r[14])||'KRW',st:str(r[15]),loc:str(r[16]),raw:str(r[17])}}
 const inbIsTrade=o=>o.kind==='매수'||o.kind==='매도';
-const inbHold=o=>o.ticker?S.D.hold.find(h=>str(h.ticker).toUpperCase()===o.ticker):null;
+// 티커 매칭: GOOGLEFINANCE 형식이 같으면 우선, 아니면 증권사 심볼(A005930, MRVL.OQ, SOXL.AX)을 코드로 비교
+const inbSym=t=>{t=str(t).toUpperCase();if(t.includes(':'))return t.split(':').pop().replace('-','.');if(/^A[0-9A-Z]{6}$/.test(t))return t.slice(1);return t.replace(/\.(OQ|O|N|NY|AX|A|K|P|PK)$/,'')};
+const inbHold=o=>{if(!o.ticker)return null;const H=S.D.hold;return H.find(h=>str(h.ticker).toUpperCase()===o.ticker)||H.find(h=>inbSym(h.ticker)===inbSym(o.ticker))||null};
 const inbOpen=()=>(S.D.inbox||[]).filter(o=>INB_OPEN.includes(o.st)).sort((a,b)=>a.date-b.date||a.row-b.row);
 // 이미 반영된 기록(메모의 api:키) = 'same', 날짜·구분·수량·단가(±0.5%)가 같은 수동 기록 = 'like'
 function inbDup(o){const tag='api:'+o.key;
