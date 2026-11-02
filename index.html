@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-V0MHObEVh2TzWHLSQt77nNDZBuZmfFp0tmJabTQy1WA=' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; connect-src https://sheets.googleapis.com https://www.googleapis.com https://oauth2.googleapis.com https://accounts.google.com/gsi/ https://*.workers.dev; frame-src https://accounts.google.com/gsi/; img-src 'self' data:; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-HAKOY9HI8BWmTnURgJbAFBROdGWLz9pGt90T7EI81LY=' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; connect-src https://sheets.googleapis.com https://www.googleapis.com https://oauth2.googleapis.com https://accounts.google.com/gsi/ https://*.workers.dev; frame-src https://accounts.google.com/gsi/; img-src 'self' data:; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
 <meta name="robots" content="noindex,nofollow">
 <meta name="theme-color" content="#0b0f17">
@@ -227,11 +227,11 @@ code{background:var(--bg2);padding:1px 5px;border-radius:5px;font-size:12.5px}
 <script>
 'use strict';
 /* ================= 상수 / 유틸 ================= */
-const VERSION='1.7.0';
+const VERSION='1.8.0';
 const SH='https://sheets.googleapis.com/v4/spreadsheets';
 const SHEETS_SCOPE='https://www.googleapis.com/auth/spreadsheets';
 const SCOPES=SHEETS_SCOPE+' openid email';
-const APP={plan:'App_매매계획',review:'App_매매회고',snap:'App_자산추이',watch:'App_관심종목',outlook:'App_전망',daily:'App_일간전망',signal:'App_시그널',fin:'App_재무추이'};
+const APP={plan:'App_매매계획',review:'App_매매회고',snap:'App_자산추이',watch:'App_관심종목',outlook:'App_전망',daily:'App_일간전망',signal:'App_시그널',fin:'App_재무추이',inbox:'App_체결수신'};
 const APPK=Object.keys(APP);
 const CASH='현금투자';
 const HDR={
@@ -242,9 +242,10 @@ const HDR={
   outlook:['작성일','구분','티커','종목명','단기','중기','장기','요약','근거·이벤트','출처'],
   daily:['작성일','구분','티커','종목명','오늘 전망','요약','체크포인트','출처'],
   signal:['키','신호일','시장','티커','종목명','구분','전략','신호','근거','가격','기준 심볼','기록시각'],
+  inbox:['키','수신시각','증권사','계좌구분','유형','거래일자','티커','종목명','수량','단가','수수료·세금','원화금액','달러금액','환율','통화','상태','반영위치','원본요약'],
   fin:['키','일자','시장','티커','종목명','현재가','실적 PER','12개월 선행 PER','포워드 PER','실적 EPS','12개월 선행 EPS','올해 회계연도 말','올해 추정 EPS','내년 회계연도 말','내년 추정 EPS','목표주가','투자의견(5=강력매수)','출처','기록시각']
 };
-const HCOL={plan:'I',review:'L',snap:'L',watch:'E',outlook:'J',daily:'H',signal:'L',fin:'S'};
+const HCOL={plan:'I',review:'L',snap:'L',watch:'E',outlook:'J',daily:'H',signal:'L',fin:'S',inbox:'R'};
 const MKL={KR:'국장',US:'미장'};
 const MCCY={KR:'KRW',US:'USD'};
 const DEF_ACC={KR:['메리츠증권','메리츠 RIA','토스증권','토스 RIA'],US:['메리츠증권','토스증권']};
@@ -492,6 +493,7 @@ function buildData(raw){
   const dl=(raw.daily||[]).map((r,i)=>({row:i+2,date:toSerial(r[0]),kind:str(r[1]),ticker:str(r[2]).toUpperCase(),name:str(r[3]),v:str(r[4]),sum:str(r[5]),chk:str(r[6]),src:str(r[7])})).filter(o=>o.date);
   const dd=dl.length?Math.max(...dl.map(o=>o.date)):0;D.daily={date:dd,rows:dl.filter(o=>o.date===dd)};
   D.signals=(raw.signal||[]).map((r,i)=>sigParse(r,i+2)).filter(o=>o.key&&o.date);D.sigKeys=new Set(D.signals.map(o=>o.key));
+  D.inbox=(raw.inbox||[]).map((r,i)=>inboxParse(r,i+2)).filter(o=>o.key);
   finIndex(D,(raw.fin||[]).map((r,i)=>finParse(r,i+2)).filter(o=>o.key&&o.date&&o.ticker));
   return D;
 }
@@ -574,6 +576,10 @@ const Store={
     const below=rows.slice(i+1).map(x=>{const y=[...x];while(y.length<7)y.push('');if(typeof y[0]==='number')y[0]=sToStr(y[0]);y[6]=safeText(y[6]);return y.slice(0,7)});
     if(below.length)await batchUpdateVals(ids().main,[{range:`${T}!A${f.row}:G${last-1}`,values:below}]);
     await batchClear(ids().main,[`${T}!A${last}:G${last}`])},
+  // 증권사 체결 수신: 상태·반영위치(P:Q)만 갱신. 쓰기 전 A열 키가 같은지 확인
+  async inboxStatus(o,st,loc){const id=ids().main,T=qn(APP.inbox);const a=await getVals(id,`${T}!A${o.row}:A${o.row}`);
+    if(str(a[0]&&a[0][0])!==o.key)throw new Error('App_체결수신이 다른 곳에서 변경되었습니다. 새로고침 후 다시 시도하세요.');
+    await batchUpdateVals(id,[{range:`${T}!P${o.row}:Q${o.row}`,values:[[st,safeText(loc||'')]]}])},
   async createAppSheets(miss){
     const id=ids().main;await ssBatch(id,miss.map(k=>({addSheet:{properties:{title:APP[k],gridProperties:{frozenRowCount:1}}}})));
     await batchUpdateVals(id,miss.map(k=>({range:`${qn(APP[k])}!A1:${HCOL[k]}1`,values:[HDR[k]]})));
@@ -1667,6 +1673,51 @@ function tradeChart(h){
 }
 
 /* ---------- 현금 ---------- */
+/* ---------- 증권사 체결 수신 (App_체결수신, meritz-sync.gs 가 기록) ---------- */
+const INB_OPEN=['대기','새 종목','중복의심'];
+function inboxParse(r,row){return {row,key:str(r[0]),at:str(r[1]),broker:str(r[2]),acc:str(r[3]),kind:str(r[4]),date:toSerial(r[5]),ticker:str(r[6]).toUpperCase(),name:str(r[7]),
+  qty:num(r[8]),price:num(r[9]),fee:num(r[10]),krw:num(r[11]),usd:num(r[12]),fx:num(r[13]),ccy:str(r[14])||'KRW',st:str(r[15]),loc:str(r[16]),raw:str(r[17])}}
+const inbIsTrade=o=>o.kind==='매수'||o.kind==='매도';
+const inbHold=o=>o.ticker?S.D.hold.find(h=>str(h.ticker).toUpperCase()===o.ticker):null;
+const inbOpen=()=>(S.D.inbox||[]).filter(o=>INB_OPEN.includes(o.st)).sort((a,b)=>a.date-b.date||a.row-b.row);
+// 이미 반영된 기록(메모의 api:키) = 'same', 날짜·구분·수량·단가(±0.5%)가 같은 수동 기록 = 'like'
+function inbDup(o){const tag='api:'+o.key;
+  if(inbIsTrade(o)){const h=inbHold(o);if(!h)return null;
+    if(h.trades.some(t=>t.memo.includes(tag)))return 'same';
+    return h.trades.some(t=>t.date===o.date&&t.type===o.kind&&Math.abs(Math.abs(t.qty)-o.qty)<1e-9&&o.price&&Math.abs(t.price-o.price)/o.price<0.005)?'like':null}
+  if(S.D.flows.some(f=>f.memo.includes(tag)))return 'same';
+  return S.D.flows.some(f=>f.date===o.date&&f.type===o.kind&&f.acc===o.acc&&Math.abs(f.krw-o.krw)<=Math.max(1,o.krw*0.001))?'like':null}
+function inbProblem(o){if(inbIsTrade(o)){if(!inbHold(o))return o.ticker?`${o.ticker} 종목 탭이 없습니다 — 새 종목 탭을 먼저 추가하세요`:'종목을 알 수 없습니다';
+    if(!(o.qty>0&&o.price>0))return '수량·단가가 없습니다';return ''}
+  if(FLOW_T.includes(o.kind)){if(!S.D.has.flow)return "'현금투자' 입출금 표가 없습니다";if(!S.D.acc.KR.includes(o.acc))return `현금투자에 '${o.acc}' 원화 계좌가 없습니다`;
+    if(!(o.krw>0))return '원화 금액이 없습니다';if(isFxT(o.kind)&&!(o.usd>0))return '달러 금액이 없습니다';return ''}
+  return `반영할 수 없는 유형(${o.kind||'미분류'}) — 무시하거나 직접 입력하세요`}
+async function inbApply(o){const tag='api:'+o.key;
+  if(inbDup(o)==='same')return Store.inboxStatus(o,'반영','이미 기록됨');
+  const pb=inbProblem(o);if(pb)throw new Error(pb);
+  if(inbIsTrade(o)){const h=inbHold(o);const fee=o.ccy==='USD'?Math.round(o.fee*100)/100:Math.floor(o.fee);
+    await Store.insertTrade(h,{date:o.date,type:o.kind,qty:o.qty,price:o.price,fee,acc:o.acc,memo:tag});return Store.inboxStatus(o,'반영',MKL[h.mkt]+'_'+h.tab)}
+  const fx=isFxT(o.kind),usd=fx?Math.round(o.usd*100)/100:0;
+  await Store.addFlow({date:o.date,type:o.kind,acc:o.acc,krw:Math.round(o.krw),usd,fx:fx?(o.fx||Math.round(o.krw/usd*100)/100):0,memo:tag});
+  return Store.inboxStatus(o,'반영',CASH)}
+function inbRow(o){const pb=inbProblem(o),dup=inbDup(o),tr=inbIsTrade(o),c=o.ccy==='USD'?'USD':'KRW';
+  const amt=tr?`${fmtNum(o.qty,4)}주 @ ${fmtMoney(o.price,c)}${o.fee?` · 비용 ${fmtMoney(o.fee,c)}`:''}`:isFxT(o.kind)?`${fmtMoney(o.usd,'USD')} / ${fmtMoney(o.krw,'KRW')} @ ${fmtNum(o.fx||(o.usd?o.krw/o.usd:0))}`:fmtMoney(o.krw,'KRW');
+  const tag=o.kind==='매수'||o.kind==='입금'||o.kind==='달러 매수'?'buy':o.kind==='매도'||o.kind==='출금'||o.kind==='달러 매도'?'sell':'';
+  return `<div class="trow" style="cursor:default"><div><span class="tag ${tag}">${esc(o.kind||'미분류')}</span> <span class="num sm">${sToStr(o.date)}</span> <span class="xs muted">${esc(o.broker)} · ${esc(o.acc)}</span></div>
+   <div class="r num strong">${tr?esc(o.name||o.ticker):''}</div><div class="xs faint">${amt}${o.raw?` · <span title="${esc(o.raw)}">원본 ${esc(o.raw.slice(0,40))}</span>`:''}</div><div class="r xs"></div>
+   ${pb?`<div class="xs" style="grid-column:1/-1;color:var(--dn)">${esc(pb)}</div>`:dup==='same'?`<div class="xs faint" style="grid-column:1/-1">이미 기록되어 있습니다(반영 시 상태만 변경)</div>`:dup==='like'?`<div class="xs" style="grid-column:1/-1;color:var(--warn,#c80)">같은 날짜·수량·단가의 수동 기록이 있습니다 — 중복인지 확인하세요</div>`:''}
+   <div class="btns" style="grid-column:1/-1;margin-top:6px">${!tr||inbHold(o)||!o.ticker?'':`<button class="btn sm" data-act="inbNewTk" data-row="${o.row}">새 종목 탭</button>`}<button class="btn sm" data-act="inbIgnore" data-row="${o.row}" data-busy>무시</button><button class="btn sm pri" data-act="inbOne" data-row="${o.row}" data-busy ${pb?'disabled':''}>반영</button></div></div>`}
+function inboxCard(){const D=S.D;if(!D.has.inbox)return '';const L=inbOpen(),ok=L.filter(o=>!inbProblem(o)&&inbDup(o)!=='like').length;
+  return `<section class="card"><h2>증권사 체결 수신 <span class="xs faint">App_체결수신</span>${L.length?`<button class="act" data-act="inboxOpen">확인 ${L.length}</button>`:''}</h2>
+   ${L.length?`<div class="sm">반영 대기 <b>${L.length}</b>건${ok<L.length?` · 확인 필요 ${L.length-ok}건`:''}</div><div class="xs faint" style="margin-top:4px">승인하면 종목 탭(날짜순 삽입) 또는 입출금·환전 표에 기록하고, 메모에 api:키를 남깁니다.</div>`
+   :`<div class="empty">대기 중인 체결이 없습니다${(D.inbox||[]).length?` · 최근 수신 ${esc((D.inbox[D.inbox.length-1]||{}).at||'')}`:''}</div>`}</section>`}
+function inboxModal(){const L=inbOpen();if(!L.length){closeModal();return toast('대기 중인 체결이 없습니다')}
+  const ok=L.filter(o=>!inbProblem(o)&&!inbDup(o)).length;
+  openModal(`<h3>증권사 체결 수신 <span class="xs faint">${L.length}건</span></h3>
+   <div class="xs faint" style="margin-bottom:8px">자동 수집(meritz-sync.gs)한 거래입니다. 내용을 확인하고 반영하세요. RIA 계좌와 토스증권은 직접 입력합니다.</div>
+   ${L.map(inbRow).join('')}
+   <div class="btns"><button class="btn" data-act="closeModal">닫기</button>${ok?`<button class="btn pri" data-act="inbAll" data-busy>문제 없는 ${ok}건 모두 반영</button>`:''}</div>`)}
+
 function vCash(){
   const D=S.D,C=D.cash;
   const tbl=(m)=>{const sec=C[m],c=MCCY[m];return `<section class="card"><h2>${m==='KR'?'원화 계좌 · 국장':'달러 계좌 · 미장'} <span class="xs faint">${c}</span></h2><div class="scrollx"><table class="tbl"><thead><tr><th>계좌</th><th>투자금</th><th>예수금</th><th>합계</th><th>비중</th></tr></thead><tbody>
@@ -1676,7 +1727,7 @@ function vCash(){
    <div><span>${m==='KR'?'기준일 이후 입출금·환전':'기준일 이후 환전 (달러)'}</span><b class="num">${fmtMoney(sec.total?sec.total.netFlow:0,c,{sign:true})}</b></div>${m==='US'?`<div><span>원금 (원화 환산)</span><b class="num">${fmtMoney(C.principalUSKRW,'KRW')}</b></div><div><span>기준 환율 (누적 달러 매수 평균)</span><b class="num">${fmtNum(C.baseFx)}</b></div>${C.baseFx?`<div><span>환차손익 (현재 ${fmtNum(D.fx)})</span><b class="num ${cls(fxEffect())}">${fmtMoney(fxEffect(),'KRW',{sign:true})}</b></div>`:''}${C.fxRealized?`<div><span>환전 실현손익</span><b class="num ${cls(C.fxRealized)}">${fmtMoney(C.fxRealized,'KRW',{sign:true})}</b></div>`:''}`:''}</div></section>`};
   const fl=D.flows.slice().sort((a,b)=>b.date-a.date||b.row-a.row);
   const tag=t=>t==='입금'||t==='달러 매수'?'buy':'sell';
-  return `<section class="card"><div class="row sb"><div><div class="lbl">총 예수금 (원화 환산)</div><div class="num strong" style="font-size:22px">${fmtMoney(D.sum.TOT.cash,'KRW')}</div></div><div style="text-align:right" class="sm muted">총자산 대비<div class="strong" style="color:var(--tx);font-size:17px">${fmtPct(D.sum.TOT.total?D.sum.TOT.cash/D.sum.TOT.total:0,{sign:false})}</div></div></div>
+  return `${inboxCard()}<section class="card"><div class="row sb"><div><div class="lbl">총 예수금 (원화 환산)</div><div class="num strong" style="font-size:22px">${fmtMoney(D.sum.TOT.cash,'KRW')}</div></div><div style="text-align:right" class="sm muted">총자산 대비<div class="strong" style="color:var(--tx);font-size:17px">${fmtPct(D.sum.TOT.total?D.sum.TOT.cash/D.sum.TOT.total:0,{sign:false})}</div></div></div>
    <div class="xs faint" style="margin-top:8px">기준일 ${sToStr(C.baseDate)} · 원금은 입출금·환전 내역 누적, 예수금은 기준일 스냅샷 + 이후 매매·입출금·환전</div></section>
   ${tbl('KR')}${tbl('US')}
   <section class="card"><h2>입출금 · 환전 <span class="xs faint">원금 산정 기준</span>${D.has.flow?`<button class="act" data-act="flowForm">＋ 추가</button>`:''}</h2>
@@ -2084,6 +2135,16 @@ const A={
     run(async()=>{await Store.upsert('plan',h.key,[h.key,MKL[h.mkt],h.tab,tg||'',st||'',num(v.wt)||'',safeText(v.thesis),safeText(v.memo),"'"+nowStr()]);closeModal()},'계획을 저장했습니다')},
   async planDel(el){if(!(await confirmBox('계획 삭제','이 종목의 매매 계획을 삭제할까요?','삭제','danger')))return;run(async()=>{await Store.delRow('plan',el.dataset.key);closeModal()},'삭제했습니다')},
   flowForm(){flowForm()},
+  inboxOpen(){inboxModal()},
+  async inbOne(el){const o=S.D.inbox.find(x=>x.row===+el.dataset.row);if(!o)return;
+    if(inbDup(o)==='like'&&!(await confirmBox('중복 확인','같은 날짜·수량·단가의 기록이 이미 있습니다.\n그래도 새로 기록할까요?','기록')))return;
+    run(async()=>{await inbApply(o);closeModal()},`${o.kind} 반영 완료`).then(()=>{if(inbOpen().length)inboxModal()})},
+  async inbIgnore(el){const o=S.D.inbox.find(x=>x.row===+el.dataset.row);if(!o)return;
+    run(async()=>{await Store.inboxStatus(o,'무시','');closeModal()},'무시로 표시했습니다').then(()=>{if(inbOpen().length)inboxModal()})},
+  inbNewTk(el){const o=S.D.inbox.find(x=>x.row===+el.dataset.row);if(!o)return;const m=/^(KRX|KOSDAQ|KOSPI):/.test(o.ticker)||/^\d/.test(o.ticker)?'KR':'US';closeModal();newTickerForm(m)},
+  async inbAll(){const L=inbOpen().filter(o=>!inbProblem(o)&&!inbDup(o));if(!L.length)return;
+    if(!(await confirmBox('모두 반영',`${L.length}건을 날짜순으로 종목 탭·입출금 표에 기록합니다. 계속할까요?`,'반영')))return;
+    run(async()=>{let n=0;for(const o0 of L){const o=S.D.inbox.find(x=>x.key===o0.key);if(!o||!INB_OPEN.includes(o.st))continue;await inbApply(o);n++;await sleep(S.cfg.demo?0:700);await load(true)}closeModal();toast(n+'건 반영')},'')},
   ffType(el){flowForm(el.dataset.val)},
   ffSave(){const el=$('#modal .sheet');const v=fv(el);const err=$('#ffErr');const t=S.ff?S.ff.type:'입금';const fx=isFxT(t);
     const f={date:toSerial(v.date),type:t,acc:str(v.acc),krw:Math.round(num(v.krw)),usd:fx?Math.round(num(v.usd)*100)/100:0,fx:fx?num(v.fx):0,memo:str(v.memo)};
@@ -2206,6 +2267,11 @@ const Demo=(()=>{
       [mon,'보유','KRX:900101','한빛반도체','약강세','강세','강세','HBM 수요 확대로 이익 추정치가 오르는 중. 단기는 20일선 지지 여부 확인.','실적 발표 예정(데모)','데모 데이터'],
       [mon,'보유','NASDAQ:NVDA','NVDA','중립','약강세','강세','데이터센터 수요는 견조, 밸류에이션 부담으로 단기 등락 가능.','','데모 데이터'],
       [mon,'관심','NASDAQ:AMD','AMD','약약세','중립','약강세','신제품 출시 전 관망 구간. 60일선 회복 여부가 관건.','','데모 데이터']]}
+  function demoInbox(){const d=k=>sToStr(toSerial(todayStr())-k),at="'"+nowStr();
+    return [['MZ|TR|demo1',at,'메리츠증권','메리츠증권','매수',d(2),'NASDAQ:AAPL','애플',3,229.85,0,'',689.55,'','USD','대기','','01|demo|해외주식매수|'],
+      ['MZ|TR|demo2',at,'메리츠증권','메리츠증권','입금',d(2),'','',0,0,0,1000000,'','','KRW','대기','','30|demo|이체입금|1'],
+      ['MZ|FX|demo3',at,'메리츠증권','메리츠증권','달러 매수',d(2),'','','','','',693200,500,1386.4,'USD','대기','','chan 157 spread 0'],
+      ['MZ|TR|demo4',at,'메리츠증권','메리츠증권','매수',d(1),'PLTR','팔란티어',5,182.4,0,'',912,'','USD','새 종목','','01|demo|해외주식매수|']]}
   function init(){
     if(wb)return;nextSid=500;
     const book=(arr)=>{const sheets=arr.map((s,i)=>Object.assign(mkTab(i+1,s[1],s[2],s[3]),{title:s[0]}));sheets.push({id:900,title:'종목목록',cells:[['종목 탭','※ 스크립트가 자동 갱신 (직접 수정 X)'],...arr.map(s=>[s[0]])]});return {sheets}};
@@ -2217,7 +2283,8 @@ const Demo=(()=>{
       {id:108,title:APP.outlook,cells:[HDR.outlook,...demoOutlook()]},
       {id:109,title:APP.signal,cells:[HDR.signal]},
       {id:110,title:APP.daily,cells:[HDR.daily,...demoDaily()]},
-      {id:111,title:APP.fin,cells:[HDR.fin,...demoFin()]}]}};
+      {id:111,title:APP.fin,cells:[HDR.fin,...demoFin()]},
+      {id:112,title:APP.inbox,cells:[HDR.inbox,...demoInbox()]}]}};
     sheet('main','현금투자').flows=openFlows();
     // 자산추이 시드
     const s=summary();const today=toSerial(todayStr());let tot=s.TOT.total,pr=s.TOT.principal;const rows=[];let seed=7;const rnd=()=>{seed=(seed*16807)%2147483647;return seed/2147483647};
