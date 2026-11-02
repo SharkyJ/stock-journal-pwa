@@ -125,7 +125,10 @@ function syncMeritz() {
   const acct = mzAccount_();
   let sh = ss.getSheetByName(MZ.STAGE);
   if (!sh) { sh = ss.insertSheet(MZ.STAGE); sh.appendRow(MZ.HDR); sh.setFrozenRows(1); }
-  const have = new Set(sh.getRange(1, 1, Math.max(1, sh.getLastRow()), 1).getValues().map(r => String(r[0])));
+  const old = sh.getLastRow() > 1 ? sh.getRange(2, 1, sh.getLastRow() - 1, 10).getValues() : [];
+  const have = new Set(old.map(r => String(r[0])));
+  // 2026-11-02 이전 버전이 해외 매매를 결제일 기준(MZ|TR)으로 기록한 행: 같은 매매를 체결일 기준으로 다시 넣지 않도록 지문 보관
+  const oldTr = new Set(old.filter(r => /^MZ\|TR\|/.test(r[0]) && /^(매수|매도)$/.test(r[4])).map(r => [mzSym_(r[6]), r[4], Number(r[8]), Number(r[9])].join('|')));
   const tickers = mzTickerMap_();
   const now = "'" + Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd HH:mm');
   const today = Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyyMMdd');
@@ -134,7 +137,9 @@ function syncMeritz() {
   const add = [];
   const push = (key, a) => { if (have.has(key)) return; have.add(key); add.push([key, now, '메리츠증권', acct].concat(a)); };
 
-  // 1) 거래내역: 매매 · 입출금 (적요코드 기준, 2026-11-02 실제 응답으로 확정)
+  // 1) 거래내역: 국내 매매 · 입출금 (적요코드 기준). 해외 매매는 거래일자(tr_date)가 결제일이라
+  //    2)의 해외 주문체결내역(체결일)으로 기록하고, 여기서는 수수료·세금만 모아 둔다.
+  const ovFee = {};
   mzGet_('/accounts/v1/me/transactions', {from: MZ.BASE_DATE, to: today, sort: 'ASC'}).rows.forEach(t => {
     if (t.cncl_yn === 'Y') return;
     const name = String(t.smcd_name || ''), iscd = String(t.iscd || '').trim();
@@ -143,6 +148,10 @@ function syncMeritz() {
     const kind = c;
     const usd = num(t.frcr_tr_amt) !== 0 && (kind === '매수' || kind === '매도' || kind === '기타');
     const fee = ['deal_fee', 'fee', 'trtx', 'srtx', 'intx', 'rstx', 'ovsc_deal_fee'].reduce((s, k) => s + num(t[k]), 0);
+    if ((kind === '매수' || kind === '매도') && usd) {
+      const k = [mzSym_(iscd), kind, num(t.tr_qty), num(t.frcr_tr_amt)].join('|');
+      (ovFee[k] = ovFee[k] || []).push(fee); return;
+    }
     const tk = iscd ? (tickers[mzSym_(iscd)] || '') : '';
     push('MZ|TR|' + t.tr_date + '|' + String(t.tran_srno).trim(), [
       kind, fmt(t.tr_date), tk || iscd, t.kor_isnm || '', num(t.tr_qty), num(t.byng_unpr), fee,
@@ -151,7 +160,22 @@ function syncMeritz() {
       [t.tr_type_code, t.smcd, name, t.io_cls_code].join('|')]);
   });
 
-  // 2) 환전내역 → 달러 매수 / 달러 매도
+  // 2) 해외 주문체결내역 → 체결일 기준 매수/매도 (90일 한도 → 창 분할)
+  mzOverseasFills_(MZ.BASE_DATE, today).forEach(o => {
+    const kind = o.seln_byov_clcd === '1' ? '매도' : o.seln_byov_clcd === '2' ? '매수' : '';
+    const q = num(o.cntg_dqty), px = num(o.cntg_crnc_prc), amt = num(o.cntg_camt) || Math.round(q * px * 100) / 100;
+    if (!kind || !(q > 0)) return;
+    const sym = mzSym_(o.iscd), fp = [sym, kind, q, px].join('|');
+    if (oldTr.has(fp)) { oldTr.delete(fp); return; }                       // 이전 버전에서 이미 수신
+    const fk = [sym, kind, q, amt].join('|'), fee = (ovFee[fk] || []).shift() || 0;
+    const d = String(o.cntg_ymdh || '').slice(0, 10) || fmt(o.oder_date);
+    const tk = tickers[sym] || '';
+    push('MZ|OV|' + o.oder_date + '|' + String(o.oder_no).trim() + '|' + String(o.cntg_ymdh || '').replace(/\D/g, '') + '|' + String(o.cntg_no || '').trim(), [
+      kind, d, tk || String(o.iscd).trim(), o.kor_isnm || '', q, px, fee, '', amt, '', String(o.crcd || 'USD').trim(),
+      tk ? '대기' : '새 종목', '', 'ord ' + o.oder_date + ' ' + (o.cntg_ymdh || '') + ' ' + (o.rctf_cncl_cls_name || '')]);
+  });
+
+  // 3) 환전내역 → 달러 매수 / 달러 매도
   mzGet_('/forex/v1/exchanges/history', {iqry_sta_date: MZ.BASE_DATE, iqry_fin_date: today}).rows.forEach(x => {
     if (String(x.rspn_cntt).indexOf('정상') < 0 || String(x.crcd).trim() !== 'USD') return;
     const kind = x.mnec_clcd === '1' ? '달러 매수' : x.mnec_clcd === '2' ? '달러 매도' : '';
@@ -163,6 +187,20 @@ function syncMeritz() {
 
   if (add.length) sh.getRange(sh.getLastRow() + 1, 1, add.length, MZ.HDR.length).setValues(add);
   Logger.log('App_체결수신 신규 ' + add.length + '건');
+}
+
+function mzOverseasFills_(from, to) {
+  const out = [], D = s => new Date(s.slice(0, 4) + '-' + s.slice(4, 6) + '-' + s.slice(6, 8) + 'T00:00:00+09:00');
+  const f8 = d => Utilities.formatDate(d, 'Asia/Seoul', 'yyyyMMdd');
+  for (let a = D(from); a <= D(to); a = new Date(a.getTime() + 89 * 864e5)) {
+    const b = new Date(Math.min(a.getTime() + 88 * 864e5, D(to).getTime()));
+    out.push.apply(out, mzGet_('/trading/v1/overseas/orders/history', {oder_sta_date: f8(a), oder_fin_date: f8(b), cntg_cls_code: '1'}).rows);
+  }
+  return out.filter(o => String(o.ovrs_stck_oder_stat_cls_code || '0') === '0');
+}
+function diagOverseas() {   // 진단: 해외 체결 행 로그 (체결일·결제일 확인용)
+  const today = Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyyMMdd');
+  mzOverseasFills_('20261010', today).forEach(o => Logger.log([o.oder_date, o.cntg_ymdh, o.iscd, o.seln_byov_clcd, o.cntg_dqty, o.cntg_crnc_prc, o.cntg_camt, o.oder_rctf_cncl_cls_code, o.cntg_no].join(' | ')));
 }
 
 /* 적요 분류 (tr_type_code | smcd | smcd_name), 2026-11-02 메리츠 실제 응답 기준
@@ -186,7 +224,8 @@ function mzClassify_(t) {
 
 /* 티커 매핑: 국장/미장 상세 파일의 각 종목 탭 B2(GOOGLEFINANCE 티커) → 심볼 */
 function mzSym_(iscd) {
-  const s = String(iscd).trim();
+  let s = String(iscd).trim().toUpperCase();
+  if (s.indexOf(':') >= 0) return s.split(':').pop().replace('-', '.');
   if (/^A\d/.test(s) || /^A[0-9A-Z]{6}$/.test(s)) return s.slice(1);          // A005930 → 005930
   return s.split('.')[0].toUpperCase();                                    // PLTR.OQ → PLTR
 }

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-hz3HCZYjviK6k6oFwZwv1cM6nmAXGcmsxMm+fl8sYAQ=' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; connect-src https://sheets.googleapis.com https://www.googleapis.com https://oauth2.googleapis.com https://accounts.google.com/gsi/ https://*.workers.dev; frame-src https://accounts.google.com/gsi/; img-src 'self' data:; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-jqJCJudalsmgJYuK8hRFcP9Thb8G0s47g4CaOAE2Qbg=' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; connect-src https://sheets.googleapis.com https://www.googleapis.com https://oauth2.googleapis.com https://accounts.google.com/gsi/ https://*.workers.dev; frame-src https://accounts.google.com/gsi/; img-src 'self' data:; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
 <meta name="robots" content="noindex,nofollow">
 <meta name="theme-color" content="#0b0f17">
@@ -227,7 +227,7 @@ code{background:var(--bg2);padding:1px 5px;border-radius:5px;font-size:12.5px}
 <script>
 'use strict';
 /* ================= 상수 / 유틸 ================= */
-const VERSION='1.8.1';
+const VERSION='1.8.2';
 const SH='https://sheets.googleapis.com/v4/spreadsheets';
 const SHEETS_SCOPE='https://www.googleapis.com/auth/spreadsheets';
 const SCOPES=SHEETS_SCOPE+' openid email';
@@ -1686,7 +1686,7 @@ const inbOpen=()=>(S.D.inbox||[]).filter(o=>INB_OPEN.includes(o.st)).sort((a,b)=
 function inbDup(o){const tag='api:'+o.key;
   if(inbIsTrade(o)){const h=inbHold(o);if(!h)return null;
     if(h.trades.some(t=>t.memo.includes(tag)))return 'same';
-    return h.trades.some(t=>t.date===o.date&&t.type===o.kind&&Math.abs(Math.abs(t.qty)-o.qty)<1e-9&&o.price&&Math.abs(t.price-o.price)/o.price<0.005)?'like':null}
+    return h.trades.some(t=>Math.abs(t.date-o.date)<=1&&t.type===o.kind&&Math.abs(Math.abs(t.qty)-o.qty)<1e-9&&o.price&&Math.abs(t.price-o.price)/o.price<0.005)?'like':null}
   if(S.D.flows.some(f=>f.memo.includes(tag)))return 'same';
   return S.D.flows.some(f=>f.date===o.date&&f.type===o.kind&&f.acc===o.acc&&Math.abs(f.krw-o.krw)<=Math.max(1,o.krw*0.001))?'like':null}
 function inbProblem(o){if(inbIsTrade(o)){if(!inbHold(o))return o.ticker?`${o.ticker} 종목 탭이 없습니다 — 새 종목 탭을 먼저 추가하세요`:'종목을 알 수 없습니다';
