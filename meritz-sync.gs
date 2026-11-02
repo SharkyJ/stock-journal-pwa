@@ -106,7 +106,7 @@ function testConnection() {
     try { const r = mzGet_(t[1], t[2]); out[t[0]] = r.rows; log('✔ ' + t[0] + ': ' + r.rows.length + '건, 필드 ' + Object.keys(r.rows[0] || {}).join(',')); }
     catch (e) { log('✘ ' + t[0] + ': ' + e.message); }
   });
-  (out['국내+해외 잔고'] || []).forEach(h => log('  보유 ' + h.iscd + ' ' + h.isnm + ' ' + (h.hldn_issu_rmnd_qty || h.rmnd_qty) + ' @' + h.byng_unpr + ' [' + h.mksc_cls_name + ']'));
+  (out['국내+해외 잔고'] || []).forEach(h => log('  보유 ' + h.iscd + ' ' + h.isnm + ' ' + (num_(h.rmnd_qty) || num_(h.hldn_issu_rmnd_qty) || num_(h.rmnd_dqty)) + ' @' + h.byng_unpr + ' [' + h.mksc_cls_name + ']'));
   // 단계 2 준비: 적요코드 표 (매매/입출금/환전 분류 확정용)
   const kinds = {};
   (out['거래내역 30일'] || []).forEach(t => {
@@ -134,22 +134,20 @@ function syncMeritz() {
   const add = [];
   const push = (key, a) => { if (have.has(key)) return; have.add(key); add.push([key, now, '메리츠증권', acct].concat(a)); };
 
-  // 1) 거래내역: 매매 · 입출금 (분류는 적요명 기준 1차 — 단계 2에서 코드표로 교체)
+  // 1) 거래내역: 매매 · 입출금 (적요코드 기준, 2026-11-02 실제 응답으로 확정)
   mzGet_('/accounts/v1/me/transactions', {from: MZ.BASE_DATE, to: today, sort: 'ASC'}).rows.forEach(t => {
     if (t.cncl_yn === 'Y') return;
     const name = String(t.smcd_name || ''), iscd = String(t.iscd || '').trim();
-    const usd = num(t.frcr_tr_amt) !== 0;
-    let kind = '미분류';
-    if (/매수/.test(name)) kind = '매수'; else if (/매도/.test(name)) kind = '매도';
-    else if (/환전|외화매수|외화매도/.test(name)) kind = '환전(무시)';            // 환전은 환전내역 API로 가져옴
-    else if (/입금|이체입/.test(name) && !iscd) kind = '입금';
-    else if (/출금|이체출/.test(name) && !iscd) kind = '출금';
+    const c = mzClassify_(t);
+    if (c === null) return;                                               // RP·환전 등 기록하지 않는 행
+    const kind = c;
+    const usd = num(t.frcr_tr_amt) !== 0 && (kind === '매수' || kind === '매도' || kind === '기타');
     const fee = ['deal_fee', 'fee', 'trtx', 'srtx', 'intx', 'rstx', 'ovsc_deal_fee'].reduce((s, k) => s + num(t[k]), 0);
     const tk = iscd ? (tickers[mzSym_(iscd)] || '') : '';
     push('MZ|TR|' + t.tr_date + '|' + String(t.tran_srno).trim(), [
       kind, fmt(t.tr_date), tk || iscd, t.kor_isnm || '', num(t.tr_qty), num(t.byng_unpr), fee,
       usd ? '' : num(t.tr_amt), usd ? num(t.frcr_tr_amt) : '', '', usd ? 'USD' : 'KRW',
-      kind === '환전(무시)' ? '무시' : (tk || !iscd ? '대기' : '새 종목'), '',
+      kind === '기타' ? '무시' : (kind === '매수' || kind === '매도') && !tk ? '새 종목' : '대기', '',
       [t.tr_type_code, t.smcd, name, t.io_cls_code].join('|')]);
   });
 
@@ -165,6 +163,25 @@ function syncMeritz() {
 
   if (add.length) sh.getRange(sh.getLastRow() + 1, 1, add.length, MZ.HDR.length).setValues(add);
   Logger.log('App_체결수신 신규 ' + add.length + '건');
+}
+
+/* 적요 분류 (tr_type_code | smcd | smcd_name), 2026-11-02 메리츠 실제 응답 기준
+ *   01 015170 외화예탁금이용료 / 01 223010 배당금      → '기타' (무시로 기록, 시트 반영 안 함)
+ *   01 102010 전자계좌입금 → 입금      02 102020 전자계좌출금 → 출금
+ *   02 007510 환전외화매수(자체) 등 환전 → 기록 안 함 (환전내역 API로 가져옴)
+ *   05 055050 주식매수 / 05 255070 해외주식 매수 → 매수     06 255040 해외주식 매도 → 매도
+ *   05·06 083050/083060 슈퍼365-RP, 112050/112040 USDRP → 기록 안 함 (예수금 운용)
+ *   국내 주식매도 코드는 아직 미관측 → 적요명 '주식매도'로 판정. 그 밖에는 '미분류'(대기)로 남겨 사람이 판단 */
+const MZ_SMCD = {'055050': '매수', '255070': '매수', '255040': '매도', '102010': '입금', '102020': '출금',
+                 '015170': '기타', '223010': '기타'};
+function mzClassify_(t) {
+  const code = String(t.smcd || '').trim(), name = String(t.smcd_name || '');
+  if (/RP/i.test(name) || /환전/.test(name)) return null;
+  if (MZ_SMCD[code]) return MZ_SMCD[code];
+  if (/^(해외)?\s*주식\s*매수$/.test(name)) return '매수';
+  if (/^(해외)?\s*주식\s*매도$/.test(name)) return '매도';
+  if (/배당|이용료|이자|세금|분배/.test(name)) return '기타';
+  return '미분류';
 }
 
 /* 티커 매핑: 국장/미장 상세 파일의 각 종목 탭 B2(GOOGLEFINANCE 티커) → 심볼 */
@@ -187,6 +204,7 @@ function mzTickerMap_() {
   return map;
 }
 
+function num_(v) { const n = Number(String(v == null ? '' : v).replace(/,/g, '').trim()); return isFinite(n) ? n : 0; }
 function mzSafe_(o) { return JSON.stringify(o || {}).replace(/\d{8,}/g, '****').slice(0, 300); }
 
 /* ---------- 트리거 ---------- */
