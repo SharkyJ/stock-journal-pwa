@@ -11,6 +11,9 @@
  *   2) testConnection 실행 → 실행 로그 확인 (단계 1: 9443 호출 · 토큰 · 조회 · 적요코드 표)
  *   3) syncMeritz 실행 → App_체결수신 시트에 '대기' 행 생성 (시트 거래·흐름에는 쓰지 않음)
  *   4) installTrigger 실행 → 매일 07:40, 16:40 (시트 시간대) 자동 실행. 제거는 removeTrigger.
+ *   5) (선택) 앱의 '동기화' 버튼: setupWebSync 실행 → 로그의 토큰 확인 → 배포 > 새 배포 > 웹 앱
+ *      (실행: 나, 액세스: 모든 사용자) → 웹 앱 URL과 토큰을 앱 설정 → 기능 → 체결 동기화에 입력.
+ *      웹 앱은 토큰이 맞을 때만 syncMeritz 를 실행하고 신규 건수만 돌려줍니다(조회 결과·계좌 정보는 반환하지 않음).
  *
  * 안전장치: 조회(GET) 경로만 허용합니다. 주문·환전 POST는 코드에 없습니다.
  *           앱키·시크릿·토큰은 스크립트 속성에만 있고, 로그와 시트에는 계좌번호를 남기지 않습니다.
@@ -121,6 +124,7 @@ function testConnection() {
 
 /* ---------- 단계 3: 스테이징 동기화 ---------- */
 function syncMeritz() {
+  // (트리거·웹 앱 공통 진입점. 웹 앱 경로는 doGet 에서 잠금을 잡음)
   const ss = SpreadsheetApp.getActive(), tz = ss.getSpreadsheetTimeZone();
   const acct = mzAccount_();
   let sh = ss.getSheetByName(MZ.STAGE);
@@ -189,6 +193,24 @@ function syncMeritz() {
 
   if (add.length) sh.getRange(sh.getLastRow() + 1, 1, add.length, MZ.HDR.length).setValues(add);
   Logger.log('App_체결수신 신규 ' + add.length + '건');
+  return add.length;
+}
+
+/* ---------- 앱 수동 동기화 (웹 앱) ---------- */
+function setupWebSync() {
+  const p = mzProps_(); let t = p.getProperty('SYNC_TOKEN');
+  if (!t) { t = Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, '').slice(0, 8); p.setProperty('SYNC_TOKEN', t); }
+  Logger.log('SYNC_TOKEN: ' + t + '  (앱 설정 → 기능 → 체결 동기화에 입력. 바꾸려면 스크립트 속성에서 SYNC_TOKEN 삭제 후 다시 실행)');
+}
+function doGet(e) {
+  const out = o => ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);
+  const t = mzProps_().getProperty('SYNC_TOKEN');
+  if (!t || !e || !e.parameter || e.parameter.k !== t) return out({ok: false, err: 'unauthorized'});
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(5000)) return out({ok: false, err: '다른 동기화가 실행 중입니다'});
+  try { const n = syncMeritz(); return out({ok: true, added: n, at: Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM-dd HH:mm')}); }
+  catch (err) { return out({ok: false, err: String(err.message || err).replace(/\d{8,}/g, '****').slice(0, 300)}); }
+  finally { lock.releaseLock(); }
 }
 
 function mzOverseasFills_(from, to) {

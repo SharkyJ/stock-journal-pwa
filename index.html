@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-jqJCJudalsmgJYuK8hRFcP9Thb8G0s47g4CaOAE2Qbg=' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; connect-src https://sheets.googleapis.com https://www.googleapis.com https://oauth2.googleapis.com https://accounts.google.com/gsi/ https://*.workers.dev; frame-src https://accounts.google.com/gsi/; img-src 'self' data:; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-ng7gz9DpxP1yI1w9c4/BVLkEpLC3OJXUzA0Enzul3ic=' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; connect-src https://sheets.googleapis.com https://www.googleapis.com https://oauth2.googleapis.com https://accounts.google.com/gsi/ https://*.workers.dev https://script.google.com https://script.googleusercontent.com; frame-src https://accounts.google.com/gsi/; img-src 'self' data:; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
 <meta name="robots" content="noindex,nofollow">
 <meta name="theme-color" content="#0b0f17">
@@ -227,7 +227,7 @@ code{background:var(--bg2);padding:1px 5px;border-radius:5px;font-size:12.5px}
 <script>
 'use strict';
 /* ================= 상수 / 유틸 ================= */
-const VERSION='1.8.2';
+const VERSION='1.9.0';
 const SH='https://sheets.googleapis.com/v4/spreadsheets';
 const SHEETS_SCOPE='https://www.googleapis.com/auth/spreadsheets';
 const SCOPES=SHEETS_SCOPE+' openid email';
@@ -253,7 +253,7 @@ const TAGS=['추세추종','눌림목','돌파','실적','뉴스/이벤트','장
 const EMOS=['확신','보통','불안','FOMO','공포','후회'];
 const LEV_US=new Set(['SOXL','TQQQ','UPRO','SPXL','TECL','FNGU','NVDL','NVDU','TSLL','METU','CONL','MSTU','SOXS','SQQQ','LABU','TNA','UDOW','QLD','SSO','USD','ROM','GGLL','AMZU','AAPU','MSFU','BITX','TSLT','NVDX','AVL','MUU','SNDU']);
 const PAL=['#6c8cff','#f5a524','#22c3a6','#e5568f','#9b7bff','#41b8e8','#f07c3c','#a3c94a'];
-const DEF={clientId:'',mainId:'',krId:'',usId:'',email:'',chartUrl:'',sp:{},under:{},lockMin:3,fees:{},fxp:{},taxKRsell:0,autoSnap:true,sigLog:true,finLog:true,theme:'auto',demo:false};
+const DEF={clientId:'',mainId:'',krId:'',usId:'',email:'',chartUrl:'',syncUrl:'',syncKey:'',sp:{},under:{},lockMin:3,fees:{},fxp:{},taxKRsell:0,autoSnap:true,sigLog:true,finLog:true,theme:'auto',demo:false};
 
 /* 계좌별 매매 수수료 기본값 (설정에서 계좌별로 덮어씀). 키: 시장|계좌명에 포함된 증권사명
    b/s: 매수/매도 수수료 %, sec: 미장 매도 SEC Fee %, min: SEC 최소금액($), until: 우대요율 종료일, after: 종료 후 수수료 % */
@@ -1710,9 +1710,30 @@ function inbRow(o){const pb=inbProblem(o),dup=inbDup(o),tr=inbIsTrade(o),c=o.ccy
    ${pb?`<div class="xs" style="grid-column:1/-1;color:var(--dn)">${esc(pb)}</div>`:dup==='same'?`<div class="xs faint" style="grid-column:1/-1">이미 기록되어 있습니다(반영 시 상태만 변경)</div>`:dup==='like'?`<div class="xs" style="grid-column:1/-1;color:var(--warn,#c80)">같은 날짜·수량·단가의 수동 기록이 있습니다 — 중복인지 확인하세요</div>`:''}
    <div class="btns" style="grid-column:1/-1;margin-top:6px">${!tr||inbHold(o)||!o.ticker?'':`<button class="btn sm" data-act="inbNewTk" data-row="${o.row}">새 종목 탭</button>`}<button class="btn sm" data-act="inbIgnore" data-row="${o.row}" data-busy>무시</button><button class="btn sm pri" data-act="inbOne" data-row="${o.row}" data-busy ${pb?'disabled':''}>반영</button></div></div>`}
 function inboxCard(){const D=S.D;if(!D.has.inbox)return '';const L=inbOpen(),ok=L.filter(o=>!inbProblem(o)&&inbDup(o)!=='like').length;
-  return `<section class="card"><h2>증권사 체결 수신 <span class="xs faint">App_체결수신</span>${L.length?`<button class="act" data-act="inboxOpen">확인 ${L.length}</button>`:''}</h2>
+  const sy=S.cfg.demo||syncOk()?`<button class="act" data-act="syncNow" data-busy>⟳ 동기화</button>`:`<button class="act" data-act="syncForm">동기화 설정</button>`;
+  return `<section class="card"><h2>증권사 체결 수신 <span class="xs faint">App_체결수신</span>${sy}${L.length?`<button class="act" data-act="inboxOpen">확인 ${L.length}</button>`:''}</h2>${SYNC.msg?`<div class="xs faint" style="margin:-4px 0 6px">${esc(SYNC.msg)}</div>`:''}
    ${L.length?`<div class="sm">반영 대기 <b>${L.length}</b>건${ok<L.length?` · 확인 필요 ${L.length-ok}건`:''}</div><div class="xs faint" style="margin-top:4px">승인하면 종목 탭(날짜순 삽입) 또는 입출금·환전 표에 기록하고, 메모에 api:키를 남깁니다.</div>`
    :`<div class="empty">대기 중인 체결이 없습니다${(D.inbox||[]).length?` · 최근 수신 ${esc((D.inbox[D.inbox.length-1]||{}).at||'')}`:''}</div>`}</section>`}
+// 수동 동기화: meritz-sync.gs 웹 앱(doGet) 호출 → 새 수신 건을 App_체결수신에 기록 → 다시 불러오기
+const SYNC={msg:''};
+const syncUrlOk=u=>/^https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec$/.test(str(u));
+const syncOk=()=>syncUrlOk(S.cfg.syncUrl)&&/^[0-9a-f]{20,64}$/i.test(str(S.cfg.syncKey));
+async function syncCall(url,key){const ctl=new AbortController(),t=setTimeout(()=>ctl.abort(),120e3);
+  try{const r=await fetch(`${url}?k=${encodeURIComponent(key)}`,{signal:ctl.signal,credentials:'omit',cache:'no-store',redirect:'follow'});
+    let j;try{j=await r.json()}catch(e){throw new Error('웹 앱 응답을 읽지 못했습니다. 배포의 액세스가 \'모든 사용자\'인지 확인하세요')}
+    if(!j.ok)throw new Error(j.err==='unauthorized'?'토큰이 맞지 않습니다':j.err||'동기화 실패');return j}
+  catch(e){if(e.name==='AbortError')throw new Error('동기화 응답 시간 초과');throw e}finally{clearTimeout(t)}}
+async function syncNow(){if(S.cfg.demo){SYNC.msg='데모 모드: 새 수신 0건 · '+nowStr();render();return toast('데모 모드에서는 동기화하지 않습니다')}
+  if(!syncOk())return syncForm();
+  run(async()=>{const j=await syncCall(S.cfg.syncUrl,S.cfg.syncKey);SYNC.msg=`마지막 동기화 ${j.at} · 새 수신 ${j.added}건`;toast(j.added?`새 체결 ${j.added}건을 받았습니다`:'새 체결이 없습니다')},'')}
+function syncForm(){
+  openModal(`<h3>체결 동기화 (메리츠)</h3>
+   <div class="sm muted" style="margin:-4px 0 12px">Apps Script의 meritz-sync.gs를 웹 앱으로 배포하면 앱에서 바로 동기화할 수 있습니다. ① setupWebSync 실행 → 로그의 토큰 복사 ② 배포 → 새 배포 → 웹 앱 (실행: 나 · 액세스: 모든 사용자) ③ 웹 앱 URL과 토큰 입력. 토큰이 맞을 때만 동기화하고, 신규 건수만 돌려받습니다.</div>
+   <label class="fld"><span>웹 앱 URL</span><input name="syncUrl" placeholder="https://script.google.com/macros/s/…/exec" value="${esc(S.cfg.syncUrl)}" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+   <label class="fld"><span>토큰 (SYNC_TOKEN)</span><input name="syncKey" value="${esc(S.cfg.syncKey)}" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+   <div class="xs faint" style="margin:-6px 0 12px">이 기기에만 저장됩니다. 비워 두고 저장하면 버튼을 끕니다.</div><div class="err" id="syErr"></div>
+   <div class="btns"><button class="btn" data-act="closeModal">취소</button><button class="btn pri" data-act="syncSave" data-busy>저장 후 동기화</button></div>`)}
+
 function inboxModal(){const L=inbOpen();if(!L.length){closeModal();return toast('대기 중인 체결이 없습니다')}
   const ok=L.filter(o=>!inbProblem(o)&&!inbDup(o)).length;
   openModal(`<h3>증권사 체결 수신 <span class="xs faint">${L.length}건</span></h3>
@@ -1892,6 +1913,7 @@ function vSettings(){
    <div class="set"><div>자산 추이 자동 기록<div class="d">앱을 열 때 오늘 값을 App_자산추이에 저장</div></div>${sw('autoSnap')}</div>
    <div class="set"><div>신호 자동 기록<div class="d">앱을 열 때 확정된 일봉 기준 새 전략 신호를 ${APP.signal}에 저장 (주가 차트 서버 필요)</div></div>${sw('sigLog')}</div>
    <div class="set"><div>재무 자동 기록<div class="d">평일 앱을 열 때 하루 한 번 보유·관심 종목의 PER·EPS 추정치를 ${APP.fin}에 저장 (주가 차트 서버 필요)${D&&D.finLast?` · 마지막 ${sToStr(D.finLast)}`:''}${FL.err?` · 오류: ${esc(FL.err)}`:''}</div></div>${sw('finLog')}</div>
+   <div class="set"><div>체결 동기화 (메리츠)<div class="d">${c.syncUrl?'웹 앱 연결됨 · 현금 탭의 ⟳ 동기화 버튼':'미연결 · meritz-sync.gs 웹 앱 배포 후 연결'}</div></div><button class="btn sm" data-act="syncForm">${c.syncUrl?'변경':'연결'}</button></div>
    <div class="set"><div>주가 차트 서버<div class="d" style="word-break:break-all">${c.demo?'데모 모드는 가상 시세 사용':c.chartUrl?esc(c.chartUrl.replace(/^https:\/\//,'')):'미연결 · 종목 상세 차트용 Cloudflare Worker'}</div></div><button class="btn sm" data-act="chartUrlForm">${c.chartUrl?'변경':'연결'}</button></div>
    ${D?`<div class="set"><div>앱 전용 시트<div class="d">${APPK.map(k=>`${APP[k]} ${has[k]?'✓':'✗'}`).join(' · ')}</div></div>${APPK.some(k=>!has[k])?`<button class="btn sm pri" data-act="createSheets" data-busy>만들기</button>`:''}</div>`:''}</section>
   ${D?vCheck():''}
@@ -2196,6 +2218,13 @@ const A={
     S.cfg.sp=sp;S.cfg.under=under;saveCfg();sgReset();closeModal();render();toast('전략 설정을 저장했습니다')},
   spReset(){S.cfg.sp={};S.cfg.under={};saveCfg();sgReset();closeModal();render();toast('기본값으로 되돌렸습니다')},
   chartUrlForm(){chartUrlForm()},
+  syncNow(){syncNow()},
+  syncForm(){syncForm()},
+  async syncSave(){const v=fv($('#modal .sheet')),u=str(v.syncUrl).trim(),k=str(v.syncKey).trim(),err=$('#syErr');
+    if(!u&&!k){S.cfg.syncUrl='';S.cfg.syncKey='';saveCfg();closeModal();render();return toast('동기화 연결을 해제했습니다')}
+    if(!syncUrlOk(u))return err.textContent='https://script.google.com/macros/s/…/exec 형식의 웹 앱 URL을 넣으세요';
+    if(!/^[0-9a-f]{20,64}$/i.test(k))return err.textContent='setupWebSync 로그에 나온 토큰을 넣으세요';
+    S.cfg.syncUrl=u;S.cfg.syncKey=k;saveCfg();closeModal();syncNow()},
   chartUrlSave(){const v=cuVal();if(v&&!chartUrlOk(v))return $('#cuErr').textContent='https://이름.계정.workers.dev 형식의 주소만 쓸 수 있습니다';
     S.cfg.chartUrl=v;saveCfg();Object.keys(PX).forEach(k=>delete PX[k]);closeModal();render();toast(v?'차트 서버를 저장했습니다':'차트를 껐습니다')},
   async chartUrlTest(){const v=cuVal(),e=$('#cuErr');if(!chartUrlOk(v))return e.textContent='https://이름.계정.workers.dev 형식의 주소를 입력하세요';
