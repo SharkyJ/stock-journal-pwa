@@ -195,7 +195,9 @@ function mzTickerMap_() {
   ['URL_KR', 'URL_US'].forEach(n => {
     const r = ss.getRangeByName(n); if (!r) return;
     try {
-      SpreadsheetApp.openByUrl(String(r.getValue())).getSheets().forEach(t => {
+      const id = (String(r.getValue()).match(/[-\w]{25,}/) || [])[0];
+      if (!id) throw new Error('파일 ID를 찾지 못함');
+      SpreadsheetApp.openById(id).getSheets().forEach(t => {
         const tk = String(t.getRange('B2').getValue() || '').trim();
         if (/^[A-Z]+:[0-9A-Z.\-]+$/.test(tk)) map[tk.split(':')[1].replace('-', '.').toUpperCase()] = tk;
       });
