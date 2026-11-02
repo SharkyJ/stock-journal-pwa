@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-ng7gz9DpxP1yI1w9c4/BVLkEpLC3OJXUzA0Enzul3ic=' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; connect-src https://sheets.googleapis.com https://www.googleapis.com https://oauth2.googleapis.com https://accounts.google.com/gsi/ https://*.workers.dev https://script.google.com https://script.googleusercontent.com; frame-src https://accounts.google.com/gsi/; img-src 'self' data:; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-DA3mFzVvaKqoos8V+SVqbHBalSuep8dT7Tf++doWgrU=' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; connect-src https://sheets.googleapis.com https://www.googleapis.com https://oauth2.googleapis.com https://accounts.google.com/gsi/ https://*.workers.dev https://script.google.com https://script.googleusercontent.com; frame-src https://accounts.google.com/gsi/; img-src 'self' data:; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
 <meta name="robots" content="noindex,nofollow">
 <meta name="theme-color" content="#0b0f17">
@@ -227,7 +227,7 @@ code{background:var(--bg2);padding:1px 5px;border-radius:5px;font-size:12.5px}
 <script>
 'use strict';
 /* ================= 상수 / 유틸 ================= */
-const VERSION='1.9.0';
+const VERSION='1.9.1';
 const SH='https://sheets.googleapis.com/v4/spreadsheets';
 const SHEETS_SCOPE='https://www.googleapis.com/auth/spreadsheets';
 const SCOPES=SHEETS_SCOPE+' openid email';
@@ -1725,7 +1725,15 @@ async function syncCall(url,key){const ctl=new AbortController(),t=setTimeout(()
   catch(e){if(e.name==='AbortError')throw new Error('동기화 응답 시간 초과');throw e}finally{clearTimeout(t)}}
 async function syncNow(){if(S.cfg.demo){SYNC.msg='데모 모드: 새 수신 0건 · '+nowStr();render();return toast('데모 모드에서는 동기화하지 않습니다')}
   if(!syncOk())return syncForm();
-  run(async()=>{const j=await syncCall(S.cfg.syncUrl,S.cfg.syncKey);SYNC.msg=`마지막 동기화 ${j.at} · 새 수신 ${j.added}건`;toast(j.added?`새 체결 ${j.added}건을 받았습니다`:'새 체결이 없습니다')},'')}
+  // 웹 앱 응답을 읽지 못해도(브라우저의 교차 출처 차단·리다이렉트 오류 등) 스크립트는 이미 실행됐을 수 있으므로 항상 시트를 다시 불러온다
+  const before=new Set((S.D&&S.D.inbox||[]).map(o=>o.key));
+  run(async()=>{let j=null,err=null;try{j=await syncCall(S.cfg.syncUrl,S.cfg.syncKey)}catch(e){err=e}
+    if(err&&/토큰|unauthorized/.test(err.message))throw err;
+    await sleep(err?2500:0);await load(true);
+    const got=(S.D.inbox||[]).filter(o=>!before.has(o.key)).length;
+    SYNC.msg=`마지막 동기화 ${nowStr()} · 새 수신 ${j?j.added:got}건${err?' (응답 확인 실패, 시트에서 직접 확인)':''}`;
+    toast((j?j.added:got)?`새 체결 ${j?j.added:got}건을 받았습니다`:err?'동기화 응답을 받지 못했습니다: '+err.message:'새 체결이 없습니다');
+    if(inbOpen().length)inboxModal()},'',false)}
 function syncForm(){
   openModal(`<h3>체결 동기화 (메리츠)</h3>
    <div class="sm muted" style="margin:-4px 0 12px">Apps Script의 meritz-sync.gs를 웹 앱으로 배포하면 앱에서 바로 동기화할 수 있습니다. ① setupWebSync 실행 → 로그의 토큰 복사 ② 배포 → 새 배포 → 웹 앱 (실행: 나 · 액세스: 모든 사용자) ③ 웹 앱 URL과 토큰 입력. 토큰이 맞을 때만 동기화하고, 신규 건수만 돌려받습니다.</div>
