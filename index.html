@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-DA3mFzVvaKqoos8V+SVqbHBalSuep8dT7Tf++doWgrU=' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; connect-src https://sheets.googleapis.com https://www.googleapis.com https://oauth2.googleapis.com https://accounts.google.com/gsi/ https://*.workers.dev https://script.google.com https://script.googleusercontent.com; frame-src https://accounts.google.com/gsi/; img-src 'self' data:; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-XYikXhnQLXjarsO/Ncd/KN2zf1gPqLPcugUazTKSzQk=' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; connect-src https://sheets.googleapis.com https://www.googleapis.com https://oauth2.googleapis.com https://accounts.google.com/gsi/ https://*.workers.dev https://script.google.com https://script.googleusercontent.com; frame-src https://accounts.google.com/gsi/; img-src 'self' data:; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
 <meta name="robots" content="noindex,nofollow">
 <meta name="theme-color" content="#0b0f17">
@@ -227,7 +227,7 @@ code{background:var(--bg2);padding:1px 5px;border-radius:5px;font-size:12.5px}
 <script>
 'use strict';
 /* ================= 상수 / 유틸 ================= */
-const VERSION='1.9.1';
+const VERSION='1.9.2';
 const SH='https://sheets.googleapis.com/v4/spreadsheets';
 const SHEETS_SCOPE='https://www.googleapis.com/auth/spreadsheets';
 const SCOPES=SHEETS_SCOPE+' openid email';
@@ -762,7 +762,8 @@ function barChart(id,items,o={}){
   g+=`<line x1="${L}" x2="${W-R}" y1="${Y(0)}" y2="${Y(0)}" stroke="var(--tx3)"/>`;
   items.forEach((it,i)=>{const x=L+i*bw+bw*.18,w=bw*.64,y=Y(Math.max(0,it.v)),h=Math.abs(Y(it.v)-Y(0));
     g+=`<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${w.toFixed(1)}" height="${Math.max(h,it.v?1:0).toFixed(1)}" rx="2" fill="${it.v>=0?'var(--up)':'var(--dn)'}"/>`;
-    if(items.length<=12||i%2===0)g+=`<text x="${(x+w/2).toFixed(1)}" y="${H-6}" text-anchor="middle">${esc(it.l)}</text>`});
+    if(items.length<=12||i%2===0)g+=`<text x="${(x+w/2).toFixed(1)}" y="${H-6}" text-anchor="middle">${esc(it.l)}</text>`;
+    if(o.tip)g+=`<rect x="${(L+i*bw).toFixed(1)}" y="${T}" width="${bw.toFixed(1)}" height="${H-T}" fill="transparent" style="cursor:pointer" data-act="barTip" data-msg="${esc(o.tip(it))}"/>`});
   return `<div class="chart"><svg viewBox="0 0 ${W} ${H}">${g}</svg></div>`;
 }
 function donut(segs,center){
@@ -1795,7 +1796,7 @@ function anReal(){
   const ytd=S.D.mk[m].holdings.reduce((a,h)=>a+h.trades.filter(t=>t.type==='매도'&&sToStr(t.date).startsWith(yr)).reduce((b,t)=>b+t.realized,0),0);
   const byStock=S.D.mk[m].holdings.map(h=>({h,v:h.realized})).filter(x=>x.v).sort((a,b)=>b.v-a.v);
   return `<div style="margin-top:12px">${seg('mr',[['KR','국장 KRW'],['US','미장 USD']])}</div>
-   <section class="card"><h2>월별 실현손익 <span class="xs faint">최근 12개월 · 매도 거래 기준</span></h2>${barChart('rm',r.months,{yFmt:v=>fmtShort(v,c)})}
+   <section class="card"><h2>월별 실현손익 <span class="xs faint">최근 12개월 · 매도 거래 기준</span></h2>${barChart('rm',r.months,{yFmt:v=>fmtShort(v,c),tip:it=>`${it.k.replace('-','년 ')}월 실현손익 ${fmtMoney(it.v,c,{sign:true})}`})}
    <div class="metrics" style="margin-top:12px"><div><span>${yr}년 실현손익</span><b class="num ${cls(ytd)}">${fmtMoney(ytd,c,{sign:true})}</b></div><div><span>전체 기간</span><b class="num ${cls(r.total)}">${fmtMoney(r.total,c,{sign:true})}</b></div></div>
    <div class="xs faint" style="margin-top:8px">세금은 계좌·상품 유형별로 달라 반영하지 않았습니다(거래별 수수료/세금 입력분만 차감).</div></section>
    <section class="card"><h2>종목별 누적 실현손익</h2>${byStock.length?byStock.map(x=>`<button class="hrow" style="padding:9px 0" data-act="stock" data-key="${esc(x.h.key)}"><div class="hl"><div class="hn">${esc(x.h.name)}</div></div><div class="hr num strong ${cls(x.v)}">${fmtMoney(x.v,c,{sign:true})}</div></button>`).join(''):'<div class="empty">실현손익이 없습니다</div>'}</section>`;
@@ -2116,6 +2117,7 @@ function setupEditForm(){
 
 /* ================= 액션 ================= */
 const A={
+  barTip(el){toast(el.dataset.msg)},
   set(el){S.v[el.dataset.k]=el.dataset.val;if(el.dataset.k==='rbs'||el.dataset.k==='rbc')S.rbw=S.rbw||null;render()},
   tab(el){const v=el.dataset.val;if(S.v.stock)S.v.stock=null;if(v!=='home'&&S.v.tab==='home')navPush({sjt:1});S.v.tab=v;render();window.scrollTo(0,0)},
   goHold(el){S.v.hf=el.dataset.val;navPush({sjt:1});S.v.tab='hold';render();window.scrollTo(0,0)},
