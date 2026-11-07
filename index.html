@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-XYikXhnQLXjarsO/Ncd/KN2zf1gPqLPcugUazTKSzQk=' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; connect-src https://sheets.googleapis.com https://www.googleapis.com https://oauth2.googleapis.com https://accounts.google.com/gsi/ https://*.workers.dev https://script.google.com https://script.googleusercontent.com; frame-src https://accounts.google.com/gsi/; img-src 'self' data:; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-57QDlYxBmXPBNpuBmb70Jw2ROFzfUC088DLrsPwO0sU=' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; connect-src https://sheets.googleapis.com https://www.googleapis.com https://oauth2.googleapis.com https://accounts.google.com/gsi/ https://*.workers.dev https://script.google.com https://script.googleusercontent.com; frame-src https://accounts.google.com/gsi/; img-src 'self' data:; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
 <meta name="robots" content="noindex,nofollow">
 <meta name="theme-color" content="#0b0f17">
@@ -227,7 +227,7 @@ code{background:var(--bg2);padding:1px 5px;border-radius:5px;font-size:12.5px}
 <script>
 'use strict';
 /* ================= 상수 / 유틸 ================= */
-const VERSION='1.9.2';
+const VERSION='1.9.3';
 const SH='https://sheets.googleapis.com/v4/spreadsheets';
 const SHEETS_SCOPE='https://www.googleapis.com/auth/spreadsheets';
 const SCOPES=SHEETS_SCOPE+' openid email';
@@ -764,7 +764,7 @@ function barChart(id,items,o={}){
     g+=`<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${w.toFixed(1)}" height="${Math.max(h,it.v?1:0).toFixed(1)}" rx="2" fill="${it.v>=0?'var(--up)':'var(--dn)'}"/>`;
     if(items.length<=12||i%2===0)g+=`<text x="${(x+w/2).toFixed(1)}" y="${H-6}" text-anchor="middle">${esc(it.l)}</text>`;
     if(o.tip)g+=`<rect x="${(L+i*bw).toFixed(1)}" y="${T}" width="${bw.toFixed(1)}" height="${H-T}" fill="transparent" style="cursor:pointer" data-act="barTip" data-msg="${esc(o.tip(it))}"/>`});
-  return `<div class="chart"><svg viewBox="0 0 ${W} ${H}">${g}</svg></div>`;
+  return `<div class="chart"><svg viewBox="0 0 ${W} ${H}">${g}</svg>${o.tip?'<div class="tip"></div>':''}</div>`;
 }
 function donut(segs,center){
   const tot=sum(segs,'v')||1;let a=0;const r=52,C=2*Math.PI*r;
@@ -2117,7 +2117,10 @@ function setupEditForm(){
 
 /* ================= 액션 ================= */
 const A={
-  barTip(el){toast(el.dataset.msg)},
+  barTip(el,e){const c=el.closest('.chart'),t=$('.tip',c),b=c.getBoundingClientRect();
+    t.textContent=el.dataset.msg;t.style.display='block';
+    const x=e.clientX-b.left,y=e.clientY-b.top,w=t.offsetWidth,h=t.offsetHeight;
+    t.style.transform=`translate(${Math.max(0,Math.min(x-w/2,b.width-w))}px,${y-h-8>=0?y-h-8:y+12}px)`},
   set(el){S.v[el.dataset.k]=el.dataset.val;if(el.dataset.k==='rbs'||el.dataset.k==='rbc')S.rbw=S.rbw||null;render()},
   tab(el){const v=el.dataset.val;if(S.v.stock)S.v.stock=null;if(v!=='home'&&S.v.tab==='home')navPush({sjt:1});S.v.tab=v;render();window.scrollTo(0,0)},
   goHold(el){S.v.hf=el.dataset.val;navPush({sjt:1});S.v.tab='hold';render();window.scrollTo(0,0)},
