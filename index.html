@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-57QDlYxBmXPBNpuBmb70Jw2ROFzfUC088DLrsPwO0sU=' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; connect-src https://sheets.googleapis.com https://www.googleapis.com https://oauth2.googleapis.com https://accounts.google.com/gsi/ https://*.workers.dev https://script.google.com https://script.googleusercontent.com; frame-src https://accounts.google.com/gsi/; img-src 'self' data:; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-lYVwO0iU1Z22U6lNBCBKrXH9hnmL6g0buRxqfWMvpHM=' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; connect-src https://sheets.googleapis.com https://www.googleapis.com https://oauth2.googleapis.com https://accounts.google.com/gsi/ https://*.workers.dev https://script.google.com https://script.googleusercontent.com; frame-src https://accounts.google.com/gsi/; img-src 'self' data:; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
 <meta name="robots" content="noindex,nofollow">
 <meta name="theme-color" content="#0b0f17">
@@ -227,7 +227,7 @@ code{background:var(--bg2);padding:1px 5px;border-radius:5px;font-size:12.5px}
 <script>
 'use strict';
 /* ================= 상수 / 유틸 ================= */
-const VERSION='1.9.3';
+const VERSION='1.10.0';
 const SH='https://sheets.googleapis.com/v4/spreadsheets';
 const SHEETS_SCOPE='https://www.googleapis.com/auth/spreadsheets';
 const SCOPES=SHEETS_SCOPE+' openid email';
@@ -299,7 +299,7 @@ class AuthErr extends Error{constructor(m){super(m||'Google 로그인이 필요�
 
 /* ================= 상태 ================= */
 const S={cfg:Object.assign({},DEF,LS.get('sj.cfg',{})),token:null,tokenExp:0,email:'',D:null,locked:true,loading:false,err:'',needAuth:false,hiddenAt:0,lastAct:Date.now(),pin:'',pinMode:'unlock',pinFirst:'',pinMsg:'',busy:false,modal:null,
-  v:{tab:'home',stock:null,ccy:'KRW',hf:'all',al:'all',hs:'weight',cm:'all',cs:'recent',an:'trend',per:'3M',tool:'avg',rbs:'KR',rbc:'1',mr:'KR',st:'KR',sm:'KR',fm:'KR',tk:'',cr:'3mo',sg:'sig',pz:'all',su:'all',ov:'ma',ok:'d'}};
+  v:{tab:'home',stock:null,ccy:'KRW',hf:'all',al:'all',hs:'weight',cm:'all',cs:'recent',an:'mkt',as:'trend',per:'3M',tool:'avg',rbs:'KR',rbc:'1',mr:'KR',st:'KR',sm:'KR',fm:'KR',tk:'',cr:'3mo',sg:'sig',pz:'all',su:'all',ov:'ma',ok:'d'}};
 const saveCfg=()=>LS.set('sj.cfg',S.cfg);
 const configured=()=>S.cfg.demo||(S.cfg.clientId&&S.cfg.mainId&&S.cfg.krId&&S.cfg.usId);
 const demoOpen=()=>!!S.cfg.demo;
@@ -607,7 +607,7 @@ async function autoSnap(){
   const t=toSerial(todayStr());const last=D.snaps.find(s=>s.date===t);
   if(last){const ts=typeof last.ts==='number'?EPOCH+last.ts*864e5-9*36e5:Date.parse(String(last.ts).replace(' ','T'));if(isFinite(ts)&&Date.now()-ts<30*60000)return}
   try{await Store.snapshot();const row=Store.snapRow();const o={date:t,principal:row[1],total:row[2],pnl:row[3],rr:row[4],kr:row[5],us:row[6],cash:row[7],fx:row[8],krP:row[9],usP:row[10],ts:nowStr()};
-    D.snaps=D.snaps.filter(s=>s.date!==t).concat(o).sort((a,b)=>a.date-b.date);if(S.v.tab==='home'||S.v.tab==='anal')render()}catch(e){console.warn('snapshot',e)}
+    D.snaps=D.snaps.filter(s=>s.date!==t).concat(o).sort((a,b)=>a.date-b.date);if(S.v.tab==='home'||S.v.tab==='cash')render()}catch(e){console.warn('snapshot',e)}
 }
 
 /* 공통 실행 래퍼 */
@@ -1059,13 +1059,14 @@ function sgAuto(){if(!S.D||S.locked||!sgReady())return;
   if(S.D.has.fin&&S.cfg.finLog&&FL.day!==todayStr())finLogTick();
   if(S.D.has.signal&&S.cfg.sigLog&&!SGL.busy&&Date.now()-SGL.at>10*60e3){const all=new Set();sgUniverse('all').forEach(x=>sgSyms(x).list.forEach(s=>all.add(s)));sgNeed([...all]);if(!SG.run&&!SG.q.length)sgLogScan()}
   const h=curStock();if(S.v.stock&&h){const s=sgSyms(h);sgNeed(s.list);if(s.sym)sgNeed([s.sym],'5yd');if(s.own&&!s.u)fundNeed(s.own);return}
+  if(S.v.tab==='anal'){if(S.v.an==='mkt'){sgNeed(MKT_IDX.map(x=>x[0]));sgNeed(MKT_FUT.map(x=>x[0]),'1d',120e3)}return}
   if(S.v.tab!=='strat')return;const sg=S.v.sg||'sig';
   if(sg==='sig'){const U=sgUniverse();const all=new Set();U.forEach(x=>sgSyms(x).list.forEach(s=>all.add(s)));sgNeed([...all]);U.forEach(x=>{const s=sgSyms(x);if(s.own&&!s.u)fundNeed(s.own)})}
-  else if(sg==='mkt'){sgNeed(MKT_IDX.map(x=>x[0]));sgNeed(MKT_FUT.map(x=>x[0]),'1d',120e3)}
   else if(sg==='log'){const ys=new Set();S.D.signals.slice(-150).forEach(o=>{const own=ySym({mkt:o.mkt,ticker:o.ticker});if(own)ys.add(own);if(o.sym)ys.add(o.sym)});sgNeed([...ys])}}
 function sgRepaint(){clearTimeout(SG.t);SG.t=setTimeout(()=>{if(S.locked||!S.D)return;const h=curStock();
   if(S.v.stock&&h){const el=$('#sgc');if(el)el.innerHTML=stratCard(h);pxPaint(h);return}
-  if(S.v.tab==='strat'&&(S.v.sg||'sig')!=='tool'){const el=$('#sgv');if(el&&!el.contains(document.activeElement))el.innerHTML=vStratBody()}},150)}
+  if(S.v.tab==='strat'&&(S.v.sg||'sig')!=='tool'){const el=$('#sgv');if(el&&!el.contains(document.activeElement))el.innerHTML=vStratBody()}
+  if(S.v.tab==='anal'&&S.v.an!=='rev'){const el=$('#anv');if(el&&!el.contains(document.activeElement))el.innerHTML=vAnalBody()}},150)}
 
 /* ================= 전략: 종목별 분석 ================= */
 function sgUniverse(which){const D=S.D;which=which||S.v.su||'all';const hs=D.hold.filter(h=>h.active),held=new Set(hs.map(h=>h.ticker));
@@ -1104,10 +1105,9 @@ const fmtPx=(v,h)=>h&&h.ccy?fmtMoney(v,h.ccy):fmtNum(v,2);
 
 /* ================= 전략 탭 ================= */
 function vStrat(){const sg=S.v.sg||'sig';
-  return `<div style="margin-top:12px">${seg('sg',[['sig','신호'],['mkt','시장'],['out','전망'],['log','기록'],['tool','도구']],'full')}</div>${sg==='tool'?vTool():`<div id="sgv">${vStratBody()}</div>`}`}
-function vStratBody(){const sg=S.v.sg||'sig';if(sg==='out')return vOut();if(sg==='log')return vLog();
-  if(!sgReady())return `<section class="card"><h2>시세 서버 연결 필요</h2><div class="sm muted">신호·시장 분석은 주가 차트와 같은 Cloudflare Worker로 시세를 받습니다. 설정 → 기능 → 주가 차트 서버를 먼저 연결하세요.</div><button class="btn sm pri" style="margin-top:12px" data-act="chartUrlForm">연결</button></section>`;
-  return sg==='mkt'?vMkt():vSig()}
+  return `<div style="margin-top:12px">${seg('sg',[['sig','신호'],['log','기록'],['tool','도구']],'full')}</div>${sg==='tool'?vTool():`<div id="sgv">${vStratBody()}</div>`}`}
+function vStratBody(){if((S.v.sg||'sig')==='log')return vLog();return sgReady()?vSig():vSgConnect()}
+const vSgConnect=()=>`<section class="card"><h2>시세 서버 연결 필요</h2><div class="sm muted">신호·시장 분석은 주가 차트와 같은 Cloudflare Worker로 시세를 받습니다. 설정 → 기능 → 주가 차트 서버를 먼저 연결하세요.</div><button class="btn sm pri" style="margin-top:12px" data-act="chartUrlForm">연결</button></section>`;
 const SG_NOTE=`<p class="xs faint" style="margin:10px 2px 0">신호는 조건 충족 여부를 보여줄 뿐 매수·매도 권유가 아닙니다. 시세는 Yahoo Finance(국장 약 20분 지연), 재무·컨센서스는 네이버 증권·Yahoo 기준입니다.</p>`;
 function vSig(){const pz=S.v.pz||'all',U=sgUniverse(),items=U.map(sgItem),D=S.D;
   const done=items.filter(x=>x.X||x.err).length;
@@ -1404,14 +1404,14 @@ function render(){
   if(S.v.tab==='settings')body=vSettings();
   else if(!S.D){body=vConnect()}
   else if(S.v.stock&&curStock())body=vStock(curStock());
-  else body=({home:vHome,hold:vHold,cash:vCash,anal:vAnal,strat:vStrat}[S.v.tab]||vHome)();
+  else body=({home:vHome,hold:vHold,cash:vAsset,anal:vAnal,strat:vStrat}[S.v.tab]||vHome)();
   const sub=S.cfg.demo?'데모 모드':S.D?`${p2(S.D.asOf.getMonth()+1)}.${p2(S.D.asOf.getDate())} ${p2(S.D.asOf.getHours())}:${p2(S.D.asOf.getMinutes())} 기준`:'';
   root.innerHTML=`<header class="top"><div class="in"><h1>주식일지 <small>${esc(sub)}</small></h1>
     <button class="ib ${S.loading?'spin':''}" data-act="refresh" aria-label="새로고침">${IC.ref}</button>
     <button class="ib" data-act="tab" data-val="settings" aria-label="설정">${IC.gear}</button></div></header>
     <main class="wrap">${S.cfg.demo&&S.D&&S.v.tab==='home'&&!S.v.stock?vDemoBar():''}${S.err&&S.D?`<div class="note warn">${esc(S.err)}</div>`:''}${body}</main>
     ${S.D?`<button class="fab" data-act="newTrade" aria-label="거래 기록">${IC.plus}</button>`:''}
-    <nav class="bot"><div class="in">${[['home','홈',IC.home],['hold','종목',IC.list],['cash','현금',IC.wallet],['anal','분석',IC.chart],['strat','전략',IC.strat]].map(([k,l,i])=>`<button data-act="tab" data-val="${k}" class="${S.v.tab===k&&!S.v.stock?'on':''}">${i}${l}</button>`).join('')}</div></nav>`;
+    <nav class="bot"><div class="in">${[['home','홈',IC.home],['anal','분석',IC.chart],['hold','종목',IC.list],['strat','전략',IC.strat],['cash','자산',IC.wallet]].map(([k,l,i])=>`<button data-act="tab" data-val="${k}" class="${S.v.tab===k&&!S.v.stock?'on':''}">${i}${l}</button>`).join('')}</div></nav>`;
 }
 function vDemoBar(){
   return `<div class="note" style="display:flex;gap:10px;align-items:center;justify-content:space-between"><div><b>데모 모드</b> · 가상 데이터로 둘러보는 중입니다. 기록·수정은 새로고침하면 초기화됩니다.</div><button class="btn sm pri" data-act="demoOff" style="flex:none">내 시트 연결</button></div>`;
@@ -1769,8 +1769,12 @@ function vCash(){
 
 /* ---------- 분석 ---------- */
 function vAnal(){
-  const t=S.v.an;
-  return `<div style="margin-top:12px">${seg('an',[['trend','자산추이'],['real','실현손익'],['stat','매매통계'],['rev','회고']],'full')}</div>${({trend:anTrend,real:anReal,stat:anStat,rev:anRev}[t]||anTrend)()}`;
+  return `<div style="margin-top:12px">${seg('an',[['mkt','시장'],['out','전망'],['rev','회고']],'full')}</div>${S.v.an==='rev'?anRev():`<div id="anv">${vAnalBody()}</div>`}`;
+}
+function vAnalBody(){if(S.v.an==='out')return vOut();return sgReady()?vMkt():vSgConnect()}
+/* ---------- 자산 ---------- */
+function vAsset(){
+  return `<div style="margin-top:12px">${seg('as',[['trend','자산추이'],['real','실현손익'],['stat','매매통계'],['acct','계좌']],'full')}</div>${({trend:anTrend,real:anReal,stat:anStat,acct:vCash}[S.v.as]||anTrend)()}`;
 }
 function anTrend(){
   const D=S.D;if(!D.has.snap)return `<section class="card"><div class="empty">App_자산추이 시트가 없습니다.<br><br><button class="btn sm pri" data-act="createSheets" data-busy>앱 시트 만들기</button></div></section>`;
@@ -1922,7 +1926,7 @@ function vSettings(){
    <div class="set"><div>자산 추이 자동 기록<div class="d">앱을 열 때 오늘 값을 App_자산추이에 저장</div></div>${sw('autoSnap')}</div>
    <div class="set"><div>신호 자동 기록<div class="d">앱을 열 때 확정된 일봉 기준 새 전략 신호를 ${APP.signal}에 저장 (주가 차트 서버 필요)</div></div>${sw('sigLog')}</div>
    <div class="set"><div>재무 자동 기록<div class="d">평일 앱을 열 때 하루 한 번 보유·관심 종목의 PER·EPS 추정치를 ${APP.fin}에 저장 (주가 차트 서버 필요)${D&&D.finLast?` · 마지막 ${sToStr(D.finLast)}`:''}${FL.err?` · 오류: ${esc(FL.err)}`:''}</div></div>${sw('finLog')}</div>
-   <div class="set"><div>체결 동기화 (메리츠)<div class="d">${c.syncUrl?'웹 앱 연결됨 · 현금 탭의 ⟳ 동기화 버튼':'미연결 · meritz-sync.gs 웹 앱 배포 후 연결'}</div></div><button class="btn sm" data-act="syncForm">${c.syncUrl?'변경':'연결'}</button></div>
+   <div class="set"><div>체결 동기화 (메리츠)<div class="d">${c.syncUrl?'웹 앱 연결됨 · 자산 > 계좌 탭의 ⟳ 동기화 버튼':'미연결 · meritz-sync.gs 웹 앱 배포 후 연결'}</div></div><button class="btn sm" data-act="syncForm">${c.syncUrl?'변경':'연결'}</button></div>
    <div class="set"><div>주가 차트 서버<div class="d" style="word-break:break-all">${c.demo?'데모 모드는 가상 시세 사용':c.chartUrl?esc(c.chartUrl.replace(/^https:\/\//,'')):'미연결 · 종목 상세 차트용 Cloudflare Worker'}</div></div><button class="btn sm" data-act="chartUrlForm">${c.chartUrl?'변경':'연결'}</button></div>
    ${D?`<div class="set"><div>앱 전용 시트<div class="d">${APPK.map(k=>`${APP[k]} ${has[k]?'✓':'✗'}`).join(' · ')}</div></div>${APPK.some(k=>!has[k])?`<button class="btn sm pri" data-act="createSheets" data-busy>만들기</button>`:''}</div>`:''}</section>
   ${D?vCheck():''}
