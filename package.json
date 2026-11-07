@@ -1,0 +1,26 @@
+{
+  "name": "stock-journal-pwa",
+  "version": "1.0.0",
+  "description": "Google Sheets 기반 주식일지(주식일지 / 국장_주식일지 / 미장_주식일지)를 휴대폰에서 기록·조회하는 웹앱입니다. 서버가 없고, 브라우저가 Google Sheets API에 **직접** 접속합니다. 이 저장소에는 시트 ID·계정·금액 등 개인 데이터가 들어 있지 않습니다.",
+  "main": "sw.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {},
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SharkyJ/stock-journal-pwa.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/SharkyJ/stock-journal-pwa/issues"
+  },
+  "homepage": "https://github.com/SharkyJ/stock-journal-pwa#readme",
+  "devDependencies": {
+    "@playwright/test": "^1.65.0",
+    "@types/node": "^26.6.6"
+  }
+}
