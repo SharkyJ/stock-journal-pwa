@@ -37,8 +37,6 @@
     "window_hours": {"daily": 24, "weekly": 336}
   },
   "outlook_values": ["강세", "약강세", "중립", "약약세", "약세"],
-  "night_rule": [[1.5, "강세"], [0.5, "약강세"], [-0.5, "중립"], [-1.5, "약약세"]],
-  "night_rule_floor": "약세",
   "sheets": {
     "daily": {
       "name": "App_일간전망",

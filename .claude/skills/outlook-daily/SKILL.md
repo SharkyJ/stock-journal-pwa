@@ -50,8 +50,6 @@ python3 collect_news.py --input work/input.json --out work/news.json
 
 공통 규칙의 용도 제한 안에서 검색해 `work/extra_sources.json`을 쓴다. 일간에서 확인할 것:
 - 오늘 국내외 경제지표 발표, 실적 발표, 정책 이벤트
-- 코스피200 야간선물: 한국거래소 야간장(18:00~다음 날 06:00) 마감가와 직전 주간장(15:45) 종가. 월요일 아침은 토요일 06:00 마감분. `kind: night_futures`로 기록한다.
-  참고: https://www.prekospi.com/kospi200-night , https://hlkr.co.kr/futures , 직전 주간 종가 https://markets.hankyung.com/indices/kospi-future , "코스피200 야간선물 마감" 뉴스.
 - `market.json`·`news.json`으로 부족한 종목별 최근 24시간 공시·뉴스 맥락
 
 ## S4 해석 작성
@@ -62,14 +60,13 @@ python3 collect_news.py --input work/input.json --out work/news.json
 {"rows": [
   {"key": "market", "outlook": "약강세", "summary": "1~2문장", "checkpoint": "오늘 볼 가격대·일정",
    "nums": ["M3", "M9"], "src": ["N2", "W1"]},
-  {"key": "night", "checkpoint": "야간선물이 국장 시초가에 주는 의미, 확인되면 야간장 고가·저가", "nums": [], "src": ["W2"]},
   {"key": "KRX:005930", "outlook": "중립", "summary": "...", "checkpoint": "지지 179,200 · 저항 217,655 · 앱 신호: 11/06 추세추종 매도·경계",
    "nums": ["T11"], "src": ["N11"]}
 ]}
 ```
 
-- 행: `market` 1개, `night` 1개(체크포인트만), 그리고 `input.json`의 보유·관심 종목마다 1개(key = 티커). 빠지거나 더 있으면 검증에서 실패한다.
-- 시장 전체 전망에는 야간선물과 미국 지수선물 흐름도 반영한다. 야간선물 행의 전망과 요약은 코드가 만든다.
+- 행: `market` 1개, 그리고 `input.json`의 보유·관심 종목마다 1개(key = 티커). 빠지거나 더 있으면 검증에서 실패한다.
+- 시장 전체 전망에는 미국 지수선물(`market.json`의 `futures`) 흐름도 반영한다. 코스피200 야간선물은 다루지 않는다.
 - `summary` 1~2문장(220자 이내), `checkpoint` 200자 이내, `src` 최대 2개.
 - 레버리지 상품은 `market.json`의 `under_id` 항목(기초자산)을 기준으로 쓴다.
 
@@ -96,4 +93,4 @@ python3 verify_written.py --rows work/rows.json --readback work/readback.json
 
 ## 마무리
 
-S7이 0일 때만 성공으로 보고한다. 1~2줄로 남긴다: 오늘 시장 분위기 한 줄(코스피200 야간선물 등락률 포함, `rows.json` 2행 요약 기준), 주목할 종목 1~2개. 주식일지 앱의 분석 → 전망 → 일간에서 확인할 수 있다고 덧붙인다. 실패했으면 실패한 단계와 errors를 그대로 보고한다.
+S7이 0일 때만 성공으로 보고한다. 1~2줄로 남긴다: 오늘 시장 분위기 한 줄, 주목할 종목 1~2개. 주식일지 앱의 분석 → 전망 → 일간에서 확인할 수 있다고 덧붙인다. 실패했으면 실패한 단계와 errors를 그대로 보고한다.

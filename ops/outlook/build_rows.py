@@ -1,7 +1,7 @@
 """S5 검증·행 조립 (결정적).
 
 LLM 출력(analysis.json)을 검사하고, 통과하면 시트 헤더 순서의 행(rows.json)을 만든다.
-작성일·구분·티커·종목명·출처 URL·야간선물 행은 코드가 채운다.
+작성일·구분·티커·종목명·출처 URL은 코드가 채운다.
 
 사용:
   python3 build_rows.py --input work/input.json --market work/market.json --news work/news.json \
@@ -94,13 +94,6 @@ def sentences(text):
     return len(re.findall(r"[.!?](?=\s|$)", text.strip())) or (1 if text.strip() else 0)
 
 
-def night_rating(chg, cfg):
-    for th, lab in cfg["night_rule"]:
-        if chg >= th if th > 0 else chg > th:
-            return lab
-    return cfg["night_rule_floor"]
-
-
 class Ctx:
     def __init__(self, inp, market, news, extra, cfg):
         self.inp, self.market, self.cfg = inp, market, cfg
@@ -185,69 +178,13 @@ def check_row(key, r, ctx, text_fields, value_fields):
     return errs
 
 
-def night_row(ctx, arow):
-    """야간선물 행: 등급·요약은 코드가 만든다. 체크포인트만 LLM(analysis 의 night 행)."""
-    cfg, errs, notes = ctx.cfg, [], []
-    srcs = []
-    n = ctx.market.get("night") or {}
-    if n.get("status") == "ok":
-        srcs.append({"close": n["close"], "prev": n["prev_close"], "as_of": n.get("as_of"),
-                     "url": n.get("url"), "shown": n.get("chg_pct")})
-    for o in ctx.extra.values():
-        if o.get("kind") == "night_futures":
-            v = o.get("values") or {}
-            num = lambda k: isinstance(v.get(k), (int, float)) and not isinstance(v.get(k), bool)  # noqa: E731
-            if num("close") and num("prev_close") and v["prev_close"]:
-                srcs.append({"close": v["close"], "prev": v["prev_close"], "as_of": v.get("as_of"),
-                             "url": o["url"], "shown": v.get("chg_pct")})
-            elif num("close") and num("chg_pct"):
-                # 직전 주간 종가를 못 찾은 경우: 출처 표시 등락률로 역산하고 그 사실을 요약에 남긴다
-                srcs.append({"close": v["close"], "prev": v["close"] / (1 + v["chg_pct"] / 100), "as_of": v.get("as_of"),
-                             "url": o["url"], "shown": v["chg_pct"], "derived": True})
-            else:
-                errs.append(f"night_futures {o['id']}: values 에 close 와 prev_close(또는 출처 표시 chg_pct) 숫자가 필요")
-    fut = {ctx.items[i]["sym"]: ctx.items[i] for i in ctx.market.get("futures", [])}
-    es, nq = fut.get("ES=F", {}), fut.get("NQ=F", {})
-
-    def fp(x):
-        return "확인 못 함" if x.get("chg_pct") is None or x.get("status") == "unavailable" else f"{x['chg_pct']:+.2f}%"
-
-    at = (es.get("as_of") or "")[11:16]
-    us = f"미국 선물({at} KST, 직전 종가 대비) S&P500 {fp(es)}, 나스닥100 {fp(nq)}." if at else \
-        f"미국 선물 S&P500 {fp(es)}, 나스닥100 {fp(nq)}."
-    if srcs:
-        s0 = srcs[0]
-        chg = (s0["close"] / s0["prev"] - 1) * 100
-        for s in srcs[1:]:
-            c2 = (s["close"] / s["prev"] - 1) * 100
-            if abs(c2 - chg) > cfg["checks"]["mismatch_pct"]:
-                notes.append(f"출처 간 차이 {c2:+.2f}%")
-        if isinstance(s0.get("shown"), (int, float)) and abs(s0["shown"] - chg) > cfg["checks"]["mismatch_pct"]:
-            notes.append(f"출처 표시 등락률 {s0['shown']:+.2f}%와 차이")
-        tm = str(s0.get("as_of") or "")[11:16]
-        if s0.get("derived"):
-            notes.insert(0, "직전 주간 종가 확인 못 함, 출처 표시 등락률")
-            base = f"코스피200 야간선물 {s0['close']:,.2f} 마감{f'({tm})' if tm else ''}, 등락률 {chg:+.2f}%"
-        else:
-            base = (f"코스피200 야간선물 {s0['close']:,.2f} 마감{f'({tm})' if tm else ''}, "
-                    f"직전 주간 종가 {s0['prev']:,.2f} 대비 {chg:+.2f}%")
-        summary = f"{base}{' (' + ', '.join(notes) + ')' if notes else ''}. {us}"
-        rating, urls = night_rating(chg, cfg), [s["url"] for s in srcs if s.get("url")][:2]
-    else:
-        summary, rating, urls = f"코스피200 야간선물 확인 못 함. {us}", "중립", []
-    chk = str((arow or {}).get("checkpoint", ""))
-    if arow:
-        errs += check_row("night", arow, ctx, ["checkpoint"], [])
-    return {"outlook": rating, "summary": summary, "checkpoint": chk, "urls": urls}, errs
-
-
 def build(inp, market, news, extra, analysis, cfg, sheet=None):
     errs = check_extra(extra)
     ctx = Ctx(inp, market, news, extra, cfg)
     mode = inp["mode"]
     rows_in = {}
     for r in analysis.get("rows", []):
-        k = str(r.get("key", "")).upper() if r.get("key") not in ("market", "night") else r["key"]
+        k = str(r.get("key", "")).upper() if r.get("key") != "market" else r["key"]
         if k in rows_in:
             errs.append(f"{k}: 행 중복")
         rows_in[k] = r
@@ -255,7 +192,7 @@ def build(inp, market, news, extra, analysis, cfg, sheet=None):
     for k in keys:
         if k not in rows_in:
             errs.append(f"{k}: analysis 에 행이 없음")
-    extra_keys = set(rows_in) - set(keys) - {"night"}
+    extra_keys = set(rows_in) - set(keys)
     if extra_keys:
         errs.append(f"analysis 에 입력에 없는 행: {', '.join(sorted(extra_keys))}")
     if mode == "daily":
@@ -265,10 +202,6 @@ def build(inp, market, news, extra, analysis, cfg, sheet=None):
     for k in keys:
         if k in rows_in:
             errs += check_row(k, rows_in[k], ctx, tf, vf)
-    nr = None
-    if mode == "daily":
-        nr, ne = night_row(ctx, rows_in.get("night"))
-        errs += ne
     if errs:
         return None, errs
 
@@ -284,8 +217,6 @@ def build(inp, market, news, extra, analysis, cfg, sheet=None):
         return [d, kind, ticker, name, r["s"], r["m"], r["l"], r["summary"], r.get("event", ""), urls(r)]
 
     rows = [line("시장", "", "시장 전체", rows_in["market"])]
-    if mode == "daily":
-        rows.append([d, "시장", "", "야간선물", nr["outlook"], nr["summary"], nr["checkpoint"], " ".join(nr["urls"])])
     for kind, lst in (("보유", inp["holdings"]), ("관심", inp["watch"])):
         for h in lst:
             rows.append(line(kind, h["ticker"], h["name"], rows_in[h["ticker"]]))
