@@ -21,3 +21,4 @@
 
 ## 참고 문서
 - 증권사 API 동기화 설계: `docs/broker-api-sync.md`
+- 전망 리포트 파이프라인 전환 계획: `docs/outlook-pipeline.md`
