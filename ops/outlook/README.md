@@ -10,10 +10,11 @@
 
 | 파일 | 단계 | 입력 → 출력 |
 |---|---|---|
+| `collect.py` | S1+S2 묶음 | `input.json` → `market.json`, `news.json` + 해석용 요약 출력 (스킬은 이것만 실행) |
 | `collect_market.py` | S1 시세 | `input.json` → `market.json` |
 | `collect_news.py` | S2 뉴스 | `input.json` → `news.json` |
 | `build_rows.py` | S5 검증·행 조립 | `input`, `market`, `news`, `extra_sources`, `analysis` → `rows.json` |
-| `verify_written.py` | S7 기록 검증 | `rows.json`, `readback.json` → 결과 |
+| `verify_written.py` | S7 기록 검증 | `rows.json`, `readback.json` → 결과. `--cols 5`면 앞 5열만 대조 |
 | `config.json` | 공통 설정 | 지수 목록, 기초자산 매핑, 뉴스 쿼리, 허용값, 길이 제한, 금지 표현, 시트 헤더 |
 | `common.py` | 공용 | HTTP 재시도, 심볼 변환, 입력 정리 |
 

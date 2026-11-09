@@ -6,6 +6,7 @@ readback.json 형식 (커넥터가 돌려준 값을 그대로 저장한다. rows
   {"values": [[헤더...], [행...], ...]}           시트 A1 부터 읽은 전체 값, 또는
   {"values": [[헤더], [오늘 행...]], "dates": [A열 전체 값]}
       시트가 길면 헤더(1행)와 오늘 기록한 행 범위만 읽고, 보관 기간 확인용으로 A열만 따로 읽는다.
+  --cols N 을 주면 앞 N 열만 대조한다(토큰 절약: 긴 요약 열을 다시 읽지 않음).
 
 사용: python3 verify_written.py --rows work/rows.json --readback work/readback.json
 종료 코드: 0 일치, 1 불일치(S6 재시도), 2 중단(파일 오류)
@@ -27,18 +28,19 @@ def norm(v):
     return re.sub(r"\s+", " ", str(v if v is not None else "")).strip()
 
 
-def verify(rows, readback):
+def verify(rows, readback, cols=None):
     errs = []
     vals = readback.get("values") or []
     if not vals:
         return ["시트 값이 비어 있음"]
     head = [norm(x) for x in vals[0]]
-    want_head = [norm(x) for x in rows["header"]]
+    n = cols or len(rows["header"])
+    want_head = [norm(x) for x in rows["header"][:n]]
     if head[: len(want_head)] != want_head:
         errs.append(f"헤더 불일치: {head} != {want_head}")
     body = [r for r in vals[1:] if any(norm(x) for x in r)]
     today = [r for r in body if norm_date(r[0] if r else "") == rows["date"]]
-    want = rows["rows"]
+    want = [r[:n] for r in rows["rows"]]
     if len(today) != len(want):
         errs.append(f"오늘({rows['date']}) 행 수 {len(today)} != {len(want)}")
     for i, (got, exp) in enumerate(zip(today, want)):
@@ -60,12 +62,13 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--rows", required=True)
     ap.add_argument("--readback", required=True)
+    ap.add_argument("--cols", type=int, help="앞에서부터 이 열 수만 대조 (예: 5 = 작성일~전망 첫 열)")
     a = ap.parse_args()
     try:
         rows, rb = C.load_json(a.rows), C.load_json(a.readback)
     except (OSError, json.JSONDecodeError) as e:
         C.fail(f"파일을 읽지 못함: {e}", C.ABORT)
-    errs = verify(rows, rb)
+    errs = verify(rows, rb, a.cols)
     if errs:
         print(json.dumps({"ok": False, "retry": True, "errors": errs[:30]}, ensure_ascii=False, indent=1))
         raise SystemExit(C.RETRY)
