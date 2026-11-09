@@ -181,6 +181,31 @@ class TestBuild(unittest.TestCase):
         _, errs = self.build(a)
         self.assertEqual(errs, [])
 
+    def test_dates_need_source(self):
+        a = analysis_ok()
+        a["rows"][2]["checkpoint"] = "1월 말 실적 발표 예상 · 11/20 행사"
+        _, errs = self.build(a)
+        joined = "\n".join(errs)
+        self.assertIn("'1월'", joined)
+        self.assertIn("'11/20'", joined)
+        a["rows"][2]["checkpoint"] = "앱 신호: 11/6 매도·경계 · 11/9 기준"
+        i = inp_daily()
+        i["signals"] = [{"date": "2026-11-06", "ticker": "KRX:005930"}]
+        _, errs = B.build(i, market_fixture(), news_fixture(), {"items": []}, a, CFG)
+        self.assertEqual(errs, [])
+
+    def test_night_derived_from_shown_pct(self):
+        ex = {"items": [{"id": "W1", "url": "https://w.example", "kind": "night_futures",
+                         "values": {"close": 795.5, "chg_pct": 0.8, "as_of": "2026-11-10T06:00+09:00"}}]}
+        res, errs = self.build(analysis_ok(), ex)
+        self.assertEqual(errs, [])
+        self.assertEqual(res["rows"][1][4], "약강세")
+        self.assertIn("직전 주간 종가 확인 못 함", res["rows"][1][5])
+        self.assertIn("+0.80%", res["rows"][1][5])
+        _, errs = self.build(analysis_ok(), {"items": [{"id": "W1", "url": "https://w", "kind": "night_futures",
+                                                        "values": {"close": 795.5}}]})
+        self.assertTrue(any("night_futures" in e for e in errs))
+
     def test_extra_id_format(self):
         _, errs = self.build(analysis_ok(), {"items": [{"id": "X1", "url": "ftp://a"}]})
         self.assertEqual(len(errs), 2)
@@ -192,12 +217,14 @@ class TestWeekly(unittest.TestCase):
         i["mode"] = "weekly"
         a = {"rows": [
             {"key": "market", "s": "중립", "m": "약강세", "l": "강세", "summary": "코스피는 0.81% 내렸다. 둘째. 셋째.",
-             "event": "11/12 CPI", "nums": ["M1"], "src": ["N1"]},
+             "event": "11/12 CPI", "nums": ["M1"], "src": ["N1", "W1"]},
             {"key": "KRX:005930", "s": "약약세", "m": "중립", "l": "강세", "summary": "x", "event": "", "nums": [], "src": []},
             {"key": "NYSEARCA:SOXL", "s": "중립", "m": "중립", "l": "중립", "summary": "x", "event": "", "nums": [], "src": []},
             {"key": "NASDAQ:MU", "s": "강세", "m": "강세", "l": "강세", "summary": "x", "event": "", "nums": [], "src": []},
         ]}
-        res, errs = B.build(i, market_fixture(), news_fixture(), {"items": []}, a, CFG)
+        ex = {"items": [{"id": "W1", "url": "https://w.example/cal", "title": "주간 일정", "kind": "event",
+                         "values": {"cpi_date": "2026-11-12"}}]}
+        res, errs = B.build(i, market_fixture(), news_fixture(), ex, a, CFG)
         self.assertEqual(errs, [])
         self.assertEqual(res["sheet"], "App_전망")
         self.assertEqual(len(res["header"]), 10)
@@ -216,6 +243,13 @@ class TestVerify(unittest.TestCase):
         vals = [r["header"], ["2026-10-20", "시장", "", "시장 전체"]] + [list(x) for x in r["rows"]]
         vals[2][0] = "2026. 11. 9"
         self.assertEqual(V.verify(r, {"values": vals}), [])
+
+    def test_partial_readback_with_dates(self):
+        r = self.rows()
+        vals = [r["header"]] + [list(x) for x in r["rows"]]
+        self.assertEqual(V.verify(r, {"values": vals, "dates": [["작성일"], ["2026-11-01"], ["2026-11-09"]]}), [])
+        errs = V.verify(r, {"values": vals, "dates": [["2026-09-30"]]})
+        self.assertTrue(any("보관 기간" in e for e in errs))
 
     def test_mismatch_and_old(self):
         r = self.rows()

@@ -2,7 +2,10 @@
 
 시트를 다시 읽은 값(readback.json)과 rows.json 을 대조한다.
 
-readback.json 형식: {"values": [[헤더...], [행...], ...]}  (시트 A1 부터 읽은 전체 값)
+readback.json 형식 (커넥터가 돌려준 값을 그대로 저장한다. rows.json 에서 만들면 안 된다):
+  {"values": [[헤더...], [행...], ...]}           시트 A1 부터 읽은 전체 값, 또는
+  {"values": [[헤더], [오늘 행...]], "dates": [A열 전체 값]}
+      시트가 길면 헤더(1행)와 오늘 기록한 행 범위만 읽고, 보관 기간 확인용으로 A열만 따로 읽는다.
 
 사용: python3 verify_written.py --rows work/rows.json --readback work/readback.json
 종료 코드: 0 일치, 1 불일치(S6 재시도), 2 중단(파일 오류)
@@ -44,8 +47,10 @@ def verify(rows, readback):
             gv = norm_date(g[j]) if j == 0 else g[j]
             if gv != norm(e):
                 errs.append(f"{i + 1}번째 행 {rows['header'][j]}: '{gv[:40]}' != '{norm(e)[:40]}'")
-    old = sorted({norm_date(r[0]) for r in body if re.fullmatch(r"\d{4}-\d{2}-\d{2}", norm_date(r[0] if r else ""))
-                  and norm_date(r[0]) < rows["delete_before"]})
+    col_a = [d[0] if isinstance(d, list) else d for d in readback["dates"]] if readback.get("dates") is not None \
+        else [r[0] if r else "" for r in body]
+    old = sorted({norm_date(d) for d in col_a if re.fullmatch(r"\d{4}-\d{2}-\d{2}", norm_date(d))
+                  and norm_date(d) < rows["delete_before"]})
     if old:
         errs.append(f"보관 기간({rows['delete_before']} 이전)이 지난 행이 남아 있음: {', '.join(old[:5])}")
     return errs

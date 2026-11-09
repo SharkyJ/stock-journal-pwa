@@ -48,6 +48,30 @@ def numbers_in(text):
     return out
 
 
+DATE_MD = [re.compile(r"(?<!\d)(\d{1,2})/(\d{1,2})(?!\d)"), re.compile(r"(\d{1,2})월\s?(\d{1,2})일"),
+           re.compile(r"\d{4}-(\d{1,2})-(\d{1,2})")]
+DATE_M = re.compile(r"(\d{1,2})월\s?(초|상순|중순|중|하순|말)")
+
+
+def dates_in(text):
+    """본문의 날짜 언급 → ({(월, 일)}, {월만 언급})."""
+    t = str(text)
+    md = {(int(m.group(1)), int(m.group(2))) for r in DATE_MD for m in r.finditer(t)
+          if 1 <= int(m.group(1)) <= 12 and 1 <= int(m.group(2)) <= 31}
+    mo = {int(m.group(1)) for m in DATE_M.finditer(t) if 1 <= int(m.group(1)) <= 12}
+    return md, mo
+
+
+def flat_strings(obj):
+    if isinstance(obj, str):
+        return [obj]
+    if isinstance(obj, dict):
+        return [x for v in obj.values() for x in flat_strings(v)]
+    if isinstance(obj, list):
+        return [x for v in obj for x in flat_strings(v)]
+    return []
+
+
 def flat_numbers(obj):
     """dict/list 안의 모든 숫자."""
     if isinstance(obj, bool):
@@ -83,13 +107,16 @@ class Ctx:
         self.items = dict(market["items"])
         self.src = {}
         for o in news.get("items", []):
-            self.src[o["id"]] = {"url": o["url"], "nums": [x[0] for x in numbers_in(o["title"])], "title": o["title"]}
+            self.src[o["id"]] = {"url": o["url"], "nums": [x[0] for x in numbers_in(o["title"])],
+                                 "text": o["title"] + " " + str(o.get("published", ""))}
         self.extra = {}
         for o in extra.get("items", []):
             self.extra[o["id"]] = o
             self.src[o["id"]] = {"url": o["url"], "nums": flat_numbers(o.get("values") or {}),
-                                 "title": o.get("title", "")}
+                                 "text": " ".join([o.get("title", "")] + flat_strings(o.get("values") or {}))}
         self.limits = cfg["limits"][inp["mode"]]
+        # 출처 없이 쓸 수 있는 날짜: 작성일, 입력의 앱 신호 날짜
+        self.base_dates = " ".join([inp["date"]] + [str(x.get("date", "")) for x in inp.get("signals") or []])
 
 
 def check_extra(extra):
@@ -130,6 +157,15 @@ def check_row(key, r, ctx, text_fields, value_fields):
     for v, dec, raw in numbers_in(text):
         if not matches(v, dec, allowed):
             errs.append(f"{key}: 수치 '{raw}' 가 nums/src 로 인용한 값에 없음")
+    ok_md, _ = dates_in(" ".join([ctx.base_dates] + [" ".join(flat_strings(ctx.items.get(i) or {})) for i in nums]
+                                 + [(ctx.src.get(i) or {}).get("text", "") for i in src]
+                                 + [" ".join(flat_strings((ctx.extra.get(i) or {}).get("values") or {})) for i in nums]))
+    ok_mo = {m for m, _ in ok_md}
+    md, mo = dates_in(text)
+    for m, d in sorted(md - ok_md):
+        errs.append(f"{key}: 날짜 '{m}/{d}' 가 nums/src 로 인용한 자료에 없음 (출처를 인용하거나 날짜를 빼야 함)")
+    for m in sorted(mo - ok_mo):
+        errs.append(f"{key}: '{m}월' 일정이 nums/src 로 인용한 자료에 없음 (근거 없는 시기 추정 금지)")
     for w in cfg["forbidden"]:
         if w in text:
             errs.append(f"{key}: 금지 표현 '{w}'")
@@ -160,11 +196,16 @@ def night_row(ctx, arow):
     for o in ctx.extra.values():
         if o.get("kind") == "night_futures":
             v = o.get("values") or {}
-            if isinstance(v.get("close"), (int, float)) and isinstance(v.get("prev_close"), (int, float)) and v["prev_close"]:
+            num = lambda k: isinstance(v.get(k), (int, float)) and not isinstance(v.get(k), bool)  # noqa: E731
+            if num("close") and num("prev_close") and v["prev_close"]:
                 srcs.append({"close": v["close"], "prev": v["prev_close"], "as_of": v.get("as_of"),
                              "url": o["url"], "shown": v.get("chg_pct")})
+            elif num("close") and num("chg_pct"):
+                # 직전 주간 종가를 못 찾은 경우: 출처 표시 등락률로 역산하고 그 사실을 요약에 남긴다
+                srcs.append({"close": v["close"], "prev": v["close"] / (1 + v["chg_pct"] / 100), "as_of": v.get("as_of"),
+                             "url": o["url"], "shown": v["chg_pct"], "derived": True})
             else:
-                errs.append(f"night_futures {o['id']}: values 에 close, prev_close 숫자가 필요")
+                errs.append(f"night_futures {o['id']}: values 에 close 와 prev_close(또는 출처 표시 chg_pct) 숫자가 필요")
     fut = {ctx.items[i]["sym"]: ctx.items[i] for i in ctx.market.get("futures", [])}
     es, nq = fut.get("ES=F", {}), fut.get("NQ=F", {})
 
@@ -184,8 +225,13 @@ def night_row(ctx, arow):
         if isinstance(s0.get("shown"), (int, float)) and abs(s0["shown"] - chg) > cfg["checks"]["mismatch_pct"]:
             notes.append(f"출처 표시 등락률 {s0['shown']:+.2f}%와 차이")
         tm = str(s0.get("as_of") or "")[11:16]
-        summary = (f"코스피200 야간선물 {s0['close']:,.2f} 마감{f'({tm})' if tm else ''}, "
-                   f"직전 주간 종가 {s0['prev']:,.2f} 대비 {chg:+.2f}%{' (' + ', '.join(notes) + ')' if notes else ''}. {us}")
+        if s0.get("derived"):
+            notes.insert(0, "직전 주간 종가 확인 못 함, 출처 표시 등락률")
+            base = f"코스피200 야간선물 {s0['close']:,.2f} 마감{f'({tm})' if tm else ''}, 등락률 {chg:+.2f}%"
+        else:
+            base = (f"코스피200 야간선물 {s0['close']:,.2f} 마감{f'({tm})' if tm else ''}, "
+                    f"직전 주간 종가 {s0['prev']:,.2f} 대비 {chg:+.2f}%")
+        summary = f"{base}{' (' + ', '.join(notes) + ')' if notes else ''}. {us}"
         rating, urls = night_rating(chg, cfg), [s["url"] for s in srcs if s.get("url")][:2]
     else:
         summary, rating, urls = f"코스피200 야간선물 확인 못 함. {us}", "중립", []
