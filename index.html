@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-VDJ3Z168x8YciCyeTSOtjfOu4FYmWxBlljMHFOw3AHU=' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; connect-src https://sheets.googleapis.com https://www.googleapis.com https://oauth2.googleapis.com https://accounts.google.com/gsi/ https://*.workers.dev https://script.google.com https://script.googleusercontent.com; frame-src https://accounts.google.com/gsi/; img-src 'self' data:; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-Fl07JEyeIMVPGC89et6BRKrXrCfhHP2pUOLD6Q6jueQ=' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; connect-src https://sheets.googleapis.com https://www.googleapis.com https://oauth2.googleapis.com https://accounts.google.com/gsi/ https://*.workers.dev https://script.google.com https://script.googleusercontent.com; frame-src https://accounts.google.com/gsi/; img-src 'self' data:; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
 <meta name="robots" content="noindex,nofollow">
 <meta name="theme-color" content="#0b0f17">
@@ -229,7 +229,7 @@ code{background:var(--bg2);padding:1px 5px;border-radius:5px;font-size:12.5px}
 <script>
 'use strict';
 /* ================= 상수 / 유틸 ================= */
-const VERSION='1.10.1';
+const VERSION='1.10.2';
 const SH='https://sheets.googleapis.com/v4/spreadsheets';
 const SHEETS_SCOPE='https://www.googleapis.com/auth/spreadsheets';
 const SCOPES=SHEETS_SCOPE+' openid email';
@@ -1026,7 +1026,7 @@ function expRange(X){const i=X.L-1,sd=X.sd60[i];if(!sd)return null;const c=X.c[i
 /* ================= 전략: 데이터 (Worker 시세·재무) ================= */
 const MKT_IDX=[['^KS11','코스피'],['^KQ11','코스닥'],['^GSPC','S&P 500'],['^NDX','나스닥 100'],['^SOX','필라델피아 반도체'],['^VIX','VIX'],['KRW=X','원/달러']];
 const IDXN=Object.fromEntries(MKT_IDX);
-// 미국 지수 선물 (CME E-mini 연결 선물, Yahoo 심볼). 코스피200 야간선물은 무료 실시간 출처가 없어 Claude 일간 리포트 값을 씀
+// 미국 지수 선물 (CME E-mini 연결 선물, Yahoo 심볼)
 const MKT_FUT=[['ES=F','S&P 500 선물'],['NQ=F','나스닥 100 선물']];
 // 레버리지 상품 → 신호 계산용 기초자산 (Yahoo 심볼, 배수). 설정에서 종목별로 바꿀 수 있음
 const UNDER_DEF={'KRX:0193T0':['000660.KS',2],'KRX:0193W0':['005930.KS',2],'NYSEARCA:SOXL':['^SOX',3],'NASDAQ:SOXL':['^SOX',3],'NASDAQ:TQQQ':['^NDX',3],'NASDAQ:QLD':['^NDX',2],
@@ -1155,14 +1155,9 @@ function vMkt(){const P=spP();const rows=MKT_IDX.map(([s,n])=>{const X=sgX(s),e=
   return `${reg?`<section class="card reg ${reg[0]}"><div class="lbl">시장 국면</div><div class="big" style="font-size:24px">${reg[1]}</div><div class="sm muted">${reg[2]} · 200일선 위 ${above}/${eq.length}${vix!=null?` · VIX ${vix.toFixed(1)}`:''}</div></section>`:''}
    ${vFut()}
    <section class="card"><h2>지수·환율</h2><div class="mkg">${rows.map(card).join('')}</div></section>
-   <div class="xs faint" style="margin:8px 2px">ST = SuperTrend(${P.stN}, ${P.stM}) 방향. 반도체 비중이 큰 포트폴리오는 필라델피아 반도체 지수 흐름을 함께 보세요.<br>선물: S&P 500·나스닥 100은 CME E-mini 연결 선물(Yahoo, 지연될 수 있음)로 전일 종가 대비 등락률입니다. 코스피200 야간선물은 무료 실시간 출처가 없어 Claude 일간 리포트가 기록한 06:00 마감 값을 보여줍니다.</div>`+SG_NOTE}
-// 야간·지수 선물: 코스피200 야간선물(일간 리포트) + 미국 지수 선물(1일 5분봉, 2분마다 갱신)
+   <div class="xs faint" style="margin:8px 2px">ST = SuperTrend(${P.stN}, ${P.stM}) 방향. 반도체 비중이 큰 포트폴리오는 필라델피아 반도체 지수 흐름을 함께 보세요.<br>선물: S&P 500·나스닥 100은 CME E-mini 연결 선물(Yahoo, 지연될 수 있음)로 전일 종가 대비 등락률입니다.</div>`+SG_NOTE}
+// 미국 지수 선물(1일 5분봉, 2분마다 갱신)
 function vFut(){const pc2=x=>x==null||!isFinite(x)?'-':(x>=0?'+':'')+(x*100).toFixed(2)+'%';
-  const O=S.D.daily,nf=O&&O.rows&&O.rows.find(o=>o.kind==='시장'&&/야간\s*선물/.test(o.name));
-  const ks=nf?`<div class="mkx" style="grid-column:1/-1"><div class="row sb" style="align-items:flex-start;gap:8px"><b>코스피200 야간선물</b><div class="hz">${hzChip('오늘',OLV(nf.v))}</div></div>
-     <div class="sm" style="margin-top:6px;white-space:pre-wrap">${esc(nf.sum)}</div>${nf.chk?`<div class="xs muted" style="margin-top:4px;white-space:pre-wrap">${esc(nf.chk)}</div>`:''}
-     <div class="xs faint" style="margin-top:4px">Claude 일간 리포트 · ${sToStr(O.date)} 아침 기록 (야간장 06:00 마감 기준)</div></div>`
-   :`<div class="mkx" style="grid-column:1/-1"><div class="row sb"><b>코스피200 야간선물</b><span class="xs faint">리포트 없음</span></div><div class="xs muted" style="margin-top:4px">평일 아침 Claude 일간 리포트가 야간장(18:00~06:00) 마감 등락률을 기록하면 여기에 표시됩니다.</div></div>`;
   const fc=([s,n])=>{const e=sgE(s,'1d'),d=e&&e.d;
     if(!d||!d.c||!d.c.length)return `<div class="mkx"><div class="row sb"><b>${esc(n)}</b><span class="xs faint">${e&&e.err?'불러오지 못함':'불러오는 중…'}</span></div></div>`;
     const L=d.c.length,px=num(d.price)>0?num(d.price):d.c[L-1],pv=num(d.prev),ch=pv>0?px/pv-1:null,at=num(d.at)||d.t[L-1];
@@ -1170,7 +1165,7 @@ function vFut(){const pc2=x=>x==null||!isFinite(x)?'-':(x>=0?'+':'')+(x*100).toF
     return `<div class="mkx"><div class="row sb"><b>${esc(n)}</b><span class="num strong">${fmtNum(px,2)} <span class="sm ${cls(ch)}">${pc2(ch)}</span></span></div>
       ${sparkI(d.c,pv)}
       <div class="row sb xs muted" style="margin-top:4px"><span>전일 종가 ${pv>0?fmtNum(pv,2):'-'} 대비</span><span>${live?'거래 중 · ':''}${ts} KST</span></div></div>`};
-  return `<section class="card"><h2>야간·지수 선물</h2><div class="mkg">${ks}${MKT_FUT.map(fc).join('')}</div></section>`}
+  return `<section class="card"><h2>미국 지수 선물</h2><div class="mkg">${MKT_FUT.map(fc).join('')}</div></section>`}
 // 당일 흐름 스파크라인: 점선 = 기준가(전일 종가)
 function sparkI(c,base){if(!c||c.length<2)return '';const vals=base>0?[...c,base]:c,lo=Math.min(...vals),hi=Math.max(...vals),W=300,H=44;
   const x=i=>i/(c.length-1)*W,y=v=>H-2-(v-lo)/((hi-lo)||1)*(H-4),up=c[c.length-1]>=(base>0?base:c[0]);
@@ -2311,7 +2306,6 @@ const Demo=(()=>{
   function reset(){wb=null}
   function demoDaily(){const t=toSerial(todayStr()),dow=new Date().getDay(),d=dow===0?t-2:dow===6?t-1:t;
     return [[d,'시장','','시장 전체','약강세','데모 리포트입니다. 간밤 미국 반도체주 강세로 국내 반도체 업종 출발이 우호적일 수 있습니다.','오늘: 국내 수출 잠정치 발표 · 원/달러 1,380원선','데모 데이터'],
-      [d,'시장','','야간선물','약강세','코스피200 야간선물 352.40 마감(06:00), 직전 주간 종가 349.10 대비 +0.95%. 미국 선물(07:05 KST, 전일 종가 대비) S&P500 +0.2%, 나스닥100 +0.4%.','반도체 대형주 중심 소폭 갭 상승 출발 가능성 · 야간장 고가 353.10 · 저가 348.60','데모 데이터'],
       [d,'보유','KRX:900101','한빛반도체','약강세','미국 메모리 업체 실적 호조 영향. 20일선(약 7만 원) 지지 여부 확인.','지지 70,000 · 저항 74,000','데모 데이터'],
       [d,'보유','NASDAQ:NVDA','NVDA','중립','특별한 뉴스 없음. 직전 고점 부근 매물 소화 구간.','이번 주 신제품 발표 예정(데모)','데모 데이터'],
       [d,'관심','NASDAQ:AMD','AMD','약약세','경쟁사 가격 인하 보도. 60일선 아래 약세 지속.','','데모 데이터']]}

@@ -39,7 +39,6 @@ python3 collect_news.py --input work/input.json --out work/news.json
 공통 규칙의 용도 제한 안에서 검색해 `work/extra_sources.json`을 쓴다. 주간에서 확인할 것:
 - 이번 주 주요 일정: 물가·고용 지표, FOMC 등 통화정책, 주요 실적 발표
 - 종목별 다음 실적 발표일(`market.json`의 `next_earnings`가 없을 때), 최근 1~2주 목표주가·투자의견 변화 뉴스
-- 야간선물은 확인하지 않는다.
 
 ## S4 해석 작성
 
@@ -54,7 +53,7 @@ python3 collect_news.py --input work/input.json --out work/news.json
 ]}
 ```
 
-- 행: `market` 1개, 그리고 `input.json`의 보유·관심 종목마다 1개(key = 티커). `night` 행은 없다.
+- 행: `market` 1개, 그리고 `input.json`의 보유·관심 종목마다 1개(key = 티커).
 - `summary` 2~3문장(420자 이내), `event` 300자 이내, `src` 최대 3개.
 - 공통 규칙의 해석 체크리스트 중 주간 필수 항목(컨센서스 변화, 밸류에이션 포함)을 확인한다.
 - 최근 14일 앱 신호가 있는 종목은 그 신호가 뉴스·실적과 맞는지 확인하고 `event`에 "앱 신호: 날짜 전략 신호" 형식으로 적는다.

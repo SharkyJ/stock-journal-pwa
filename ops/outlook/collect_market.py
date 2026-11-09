@@ -198,8 +198,6 @@ def collect(inp, cfg, base=None, now_ts=None):
                     under_ids[u[0]] = add("U", col.quote(u[0], f"{h['name']} 기초자산", now_ts))
                 entry["under_id"] = under_ids[u[0]]
             out["tickers"].append(entry)
-    out["night"] = {"status": "unavailable", "source": None,
-                    "note": "S1 공식 출처 미연결(P8). S3에서 extra_sources.json 의 night_futures 로 기록"}
     out["items"] = items
     return out
 

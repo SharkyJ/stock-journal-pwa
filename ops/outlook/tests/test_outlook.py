@@ -41,7 +41,7 @@ def market_fixture():
         "T7": {"id": "T7", "sym": "MU", "status": "ok", "value": 690.0, "chg_pct": 5.12},
     }
     return {"date": "2026-11-09", "mode": "daily", "indices": ["M1"], "futures": ["M2", "M3"],
-            "tickers": [], "night": {"status": "unavailable"}, "items": items}
+            "tickers": [], "items": items}
 
 
 def news_fixture():
@@ -55,7 +55,6 @@ def analysis_ok():
     return {"rows": [
         {"key": "market", "outlook": "중립", "summary": "코스피는 5,018.85로 0.81% 내렸다.", "checkpoint": "20일 저점 4,911.28",
          "nums": ["M1"], "src": ["N1"]},
-        {"key": "night", "checkpoint": "반도체 갭 상승 여부", "nums": [], "src": []},
         {"key": "KRX:005930", "outlook": "약약세", "summary": "20일선 대비 -12.75% 아래다.", "checkpoint": "지지 179,200",
          "nums": ["T4"], "src": ["N2"]},
         {"key": "NYSEARCA:SOXL", "outlook": "중립", "summary": "기초자산이 4.21% 올랐다.", "checkpoint": "", "nums": ["U6"], "src": []},
@@ -136,40 +135,25 @@ class TestBuild(unittest.TestCase):
         got = [x[2] for x in B.numbers_in("2026-11-10 07:05 20일선 3거래일 5,018.85 -0.81% 690 1200원 11월 10일 2026년")]
         self.assertEqual(got, ["5,018.85", "-0.81%", "1200"])
 
-    def test_night_rating(self):
-        r = [B.night_rating(x, CFG) for x in (1.5, 0.5, 0.49, -0.49, -0.5, -1.49, -1.5)]
-        self.assertEqual(r, ["강세", "약강세", "중립", "중립", "약약세", "약약세", "약세"])
-
     def test_ok(self):
         res, errs = self.build(analysis_ok())
         self.assertEqual(errs, [])
         self.assertEqual(res["sheet"], "X_v2")
-        self.assertEqual([r[3] for r in res["rows"]], ["시장 전체", "야간선물", "삼성전자", "SOXL", "마이크론"])
-        self.assertEqual([r[1] for r in res["rows"]], ["시장", "시장", "보유", "보유", "관심"])
-        self.assertEqual(res["rows"][1][4], "중립")
-        self.assertIn("확인 못 함", res["rows"][1][5])
+        self.assertEqual([r[3] for r in res["rows"]], ["시장 전체", "삼성전자", "SOXL", "마이크론"])
+        self.assertEqual([r[1] for r in res["rows"]], ["시장", "보유", "보유", "관심"])
         self.assertEqual(res["rows"][0][7], "https://n.example/1")
         self.assertEqual(res["delete_before"], "2026-10-10")
-
-    def test_night_from_extra(self):
-        ex = {"items": [{"id": "W1", "url": "https://w.example", "kind": "night_futures",
-                         "values": {"close": 702.35, "prev_close": 698.1, "as_of": "2026-11-10T06:00+09:00", "chg_pct": 1.2}}]}
-        res, errs = self.build(analysis_ok(), ex)
-        self.assertEqual(errs, [])
-        self.assertEqual(res["rows"][1][4], "약강세")
-        self.assertIn("+0.61%", res["rows"][1][5])
-        self.assertIn("출처 표시 등락률", res["rows"][1][5])
 
     def test_errors(self):
         a = analysis_ok()
         a["rows"][0]["summary"] = "코스피 5,123.45. 반드시 오른다. 셋째 문장."
-        a["rows"][2]["outlook"] = "상승"
-        a["rows"][3]["src"] = ["N9"]
+        a["rows"][1]["outlook"] = "상승"
+        a["rows"][2]["src"] = ["N9"]
         a["rows"].pop()
-        a["rows"].append({"key": "KRX:999999", "outlook": "중립", "summary": "x"})
+        a["rows"].append({"key": "night", "outlook": "중립", "summary": "x"})
         _, errs = self.build(a)
         joined = "\n".join(errs)
-        for s in ("NASDAQ:MU: analysis 에 행이 없음", "'5,123.45'", "금지 표현", "3문장", "허용값", "N9", "입력에 없는 행"):
+        for s in ("NASDAQ:MU: analysis 에 행이 없음", "'5,123.45'", "금지 표현", "3문장", "허용값", "N9", "입력에 없는 행: NIGHT"):
             self.assertIn(s, joined)
 
     def test_stale_needs_note(self):
@@ -183,28 +167,16 @@ class TestBuild(unittest.TestCase):
 
     def test_dates_need_source(self):
         a = analysis_ok()
-        a["rows"][2]["checkpoint"] = "1월 말 실적 발표 예상 · 11/20 행사"
+        a["rows"][1]["checkpoint"] = "1월 말 실적 발표 예상 · 11/20 행사"
         _, errs = self.build(a)
         joined = "\n".join(errs)
         self.assertIn("'1월'", joined)
         self.assertIn("'11/20'", joined)
-        a["rows"][2]["checkpoint"] = "앱 신호: 11/6 매도·경계 · 11/9 기준"
+        a["rows"][1]["checkpoint"] = "앱 신호: 11/6 매도·경계 · 11/9 기준"
         i = inp_daily()
         i["signals"] = [{"date": "2026-11-06", "ticker": "KRX:005930"}]
         _, errs = B.build(i, market_fixture(), news_fixture(), {"items": []}, a, CFG)
         self.assertEqual(errs, [])
-
-    def test_night_derived_from_shown_pct(self):
-        ex = {"items": [{"id": "W1", "url": "https://w.example", "kind": "night_futures",
-                         "values": {"close": 795.5, "chg_pct": 0.8, "as_of": "2026-11-10T06:00+09:00"}}]}
-        res, errs = self.build(analysis_ok(), ex)
-        self.assertEqual(errs, [])
-        self.assertEqual(res["rows"][1][4], "약강세")
-        self.assertIn("직전 주간 종가 확인 못 함", res["rows"][1][5])
-        self.assertIn("+0.80%", res["rows"][1][5])
-        _, errs = self.build(analysis_ok(), {"items": [{"id": "W1", "url": "https://w", "kind": "night_futures",
-                                                        "values": {"close": 795.5}}]})
-        self.assertTrue(any("night_futures" in e for e in errs))
 
     def test_extra_id_format(self):
         _, errs = self.build(analysis_ok(), {"items": [{"id": "X1", "url": "ftp://a"}]})
