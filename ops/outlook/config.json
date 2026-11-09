@@ -1,0 +1,59 @@
+{
+  "worker_base": "https://sj-chart.blueinwhite.workers.dev",
+  "http": {"timeout_sec": 20, "retries": 3, "backoff_sec": 2, "delay_sec": 0.3},
+  "indices": [
+    ["^KS11", "코스피"],
+    ["^KQ11", "코스닥"],
+    ["^GSPC", "S&P 500"],
+    ["^NDX", "나스닥 100"],
+    ["^SOX", "필라델피아 반도체"],
+    ["^VIX", "VIX"],
+    ["KRW=X", "원/달러"],
+    ["^TNX", "미국 10년물 금리"]
+  ],
+  "futures": [
+    ["ES=F", "S&P 500 선물"],
+    ["NQ=F", "나스닥 100 선물"]
+  ],
+  "underlying": {
+    "KRX:0193T0": ["000660.KS", 2], "KRX:0193W0": ["005930.KS", 2],
+    "NYSEARCA:SOXL": ["^SOX", 3], "NASDAQ:SOXL": ["^SOX", 3],
+    "NASDAQ:TQQQ": ["^NDX", 3], "NASDAQ:QLD": ["^NDX", 2],
+    "NYSEARCA:UPRO": ["^GSPC", 3], "NYSEARCA:SPXL": ["^GSPC", 3], "NYSEARCA:SSO": ["^GSPC", 2],
+    "NASDAQ:METU": ["META", 2], "NASDAQ:NVDL": ["NVDA", 2], "NASDAQ:NVDU": ["NVDA", 2],
+    "NASDAQ:TSLL": ["TSLA", 2], "NASDAQ:CONL": ["COIN", 2], "NASDAQ:MSTU": ["MSTR", 2],
+    "NASDAQ:GGLL": ["GOOGL", 2], "NASDAQ:AMZU": ["AMZN", 2], "NASDAQ:AAPU": ["AAPL", 2],
+    "NASDAQ:MSFU": ["MSFT", 2]
+  },
+  "checks": {"mismatch_pct": 0.3, "stale_hours": 96},
+  "consensus": {"min_days": 28, "max_days": 45, "daily_notable_pct": 2.0},
+  "news": {
+    "market_queries": [
+      {"q": "코스피 증시", "lang": "ko"},
+      {"q": "Wall Street stocks S&P 500 Nasdaq", "lang": "en"}
+    ],
+    "market_max": 5,
+    "ticker_max": 3,
+    "window_hours": {"daily": 24, "weekly": 336}
+  },
+  "outlook_values": ["강세", "약강세", "중립", "약약세", "약세"],
+  "night_rule": [[1.5, "강세"], [0.5, "약강세"], [-0.5, "중립"], [-1.5, "약약세"]],
+  "night_rule_floor": "약세",
+  "sheets": {
+    "daily": {
+      "name": "App_일간전망",
+      "header": ["작성일", "구분", "티커", "종목명", "오늘 전망", "요약", "체크포인트", "출처"],
+      "keep_days": 30
+    },
+    "weekly": {
+      "name": "App_전망",
+      "header": ["작성일", "구분", "티커", "종목명", "단기", "중기", "장기", "요약", "근거·이벤트", "출처"],
+      "keep_days": 84
+    }
+  },
+  "limits": {
+    "daily": {"summary_chars": 220, "summary_sentences": 2, "check_chars": 200, "src_max": 2},
+    "weekly": {"summary_chars": 420, "summary_sentences": 3, "check_chars": 300, "src_max": 3}
+  },
+  "forbidden": ["매수하세요", "매도하세요", "사세요", "파세요", "매수 추천", "매도 추천", "강력 추천", "반드시 오", "반드시 내", "확실히 오", "확실히 내", "무조건"]
+}

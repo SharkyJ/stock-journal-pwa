@@ -6,3 +6,7 @@ node_modules/
 /blob-report/
 /playwright/.cache/
 /playwright/.auth/
+
+# 전망 파이프라인 작업 파일
+ops/outlook/work/
+__pycache__/
