@@ -205,6 +205,26 @@ class TestWeekly(unittest.TestCase):
         self.assertEqual(res["delete_before"], "2026-08-17")
 
 
+class TestDigest(unittest.TestCase):
+    def test_digest(self):
+        import collect as K
+        m = market_fixture()
+        m["tickers"] = [{"ticker": "KRX:005930", "name": "삼성전자", "kind": "보유", "id": "T4"},
+                        {"ticker": "NYSEARCA:SOXL", "name": "SOXL", "kind": "보유", "id": "T5", "under_id": "U6"}]
+        n = {"items": [{"id": "N1", "scope": "market", "published": "2026-11-09T16:49+09:00", "source": "S", "title": "t"}]}
+        d = K.digest(inp_daily(), m, n)
+        self.assertIn("T4 KRX:005930 삼성전자 [보유] 189,900 +0.64%", d)
+        self.assertIn("20일선 -12.75%", d)
+        self.assertIn("M3 ", d)
+        self.assertIn("[stale]", d)
+        self.assertIn("기초자산 U6", d)
+        self.assertIn("U6 ^SOX", d)
+        self.assertIn("N1 [market] 11-09 16:49 S | t", d)
+        # 요약의 숫자는 검증기가 인용 값으로 인정하는 형식이어야 한다
+        for v, dec, raw in B.numbers_in("189,900 +0.64% -12.75% 9,390.25"):
+            self.assertTrue(B.matches(v, dec, B.flat_numbers(m["items"])), raw)
+
+
 class TestVerify(unittest.TestCase):
     def rows(self):
         res, _ = B.build(inp_daily(), market_fixture(), news_fixture(), {"items": []}, analysis_ok(), CFG)
@@ -222,6 +242,13 @@ class TestVerify(unittest.TestCase):
         self.assertEqual(V.verify(r, {"values": vals, "dates": [["작성일"], ["2026-11-01"], ["2026-11-09"]]}), [])
         errs = V.verify(r, {"values": vals, "dates": [["2026-09-30"]]})
         self.assertTrue(any("보관 기간" in e for e in errs))
+
+    def test_cols_partial(self):
+        r = self.rows()
+        vals = [r["header"][:5]] + [list(x[:5]) for x in r["rows"]]
+        self.assertEqual(V.verify(r, {"values": vals}, cols=5), [])
+        vals[1][4] = "강세" if vals[1][4] != "강세" else "약세"
+        self.assertTrue(V.verify(r, {"values": vals}, cols=5))
 
     def test_mismatch_and_old(self):
         r = self.rows()

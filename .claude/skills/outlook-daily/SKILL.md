@@ -5,92 +5,93 @@ description: 주식일지 일간 전망 리포트를 작성해 Google Sheets에 
 
 # 일간 전망 리포트
 
-먼저 `.claude/skills/outlook-common.md`를 읽고 그 규칙을 따른다. 아래 단계를 순서대로 하고, 각 스크립트의 종료 코드를 확인한다.
+`.claude/skills/outlook-common.md`의 규칙을 따른다. 아래 순서를 그대로 실행하고, 표시된 대로 **한 턴에 병렬로** 호출한다. 파일을 둘러보거나 JSON 원본을 열지 않는다.
 
-예약 작업 프롬프트가 주는 값:
-- `SPREADSHEET_ID`: 주식일지 스프레드시트 ID
-- `TARGET_SHEET`: 기록할 시트 (`App_일간전망` 또는 병행 운영 중 `App_일간전망_v2`)
+예약 작업 프롬프트가 주는 값: `SPREADSHEET_ID`, `TARGET_SHEET` (`App_일간전망` 또는 `App_일간전망_v2`). 날짜는 Asia/Seoul `YYYY-MM-DD`.
 
-대상: 오늘 하루(국장 장중, 미장은 오늘 밤 장). 날짜는 Asia/Seoul 기준 `YYYY-MM-DD`.
+## 1. 입력 읽기 — 한 턴, 병렬 get_values
 
-## S0 입력 읽기 (Google Sheets 커넥터)
+| 범위 | 쓰는 값 |
+|---|---|
+| `'국장투자'!A5:D`, `'미장투자'!A5:D` | B 종목명, C 티커, D 보유 수량. 수량 > 0 만 `holdings` |
+| `'App_관심종목'!A2:C` | A 티커, B 종목명 → `watch` |
+| `'App_시그널'!B2:H` | B 신호일, D 티커, G 전략, H 신호. 최근 3거래일만 `signals` |
+| `'App_전망'!A2:G` | 작성일이 가장 최근인 행만 `weekly` (티커, 종목명, 단기, 중기, 장기) |
+| `'App_재무추이'!B2:D`, `'App_재무추이'!L2:P` | 같은 행끼리 합쳐 B 일자, D 티커, L 올해 회계연도 말, M 올해 추정 EPS, N 내년 회계연도 말, O 내년 추정 EPS, P 목표주가. 국장 보유·관심 종목의 최근 45일만 `fin` |
 
-`rm -rf ops/outlook/work && mkdir -p ops/outlook/work` 후, 아래를 읽어 `ops/outlook/work/input.json`에 저장한다.
+없는 시트는 빈 값으로 둔다. 시트에 접근할 수 없으면 아무것도 쓰지 말고 막힌 내용을 보고하고 끝낸다.
 
-- `'국장투자'!A3:L`, `'미장투자'!A3:L`: 3행 헤더, 4행 합계, 5행부터 종목. 열은 종목 탭, 종목명, 티커(`KRX:005930`, `NASDAQ:MU` 형식), 보유 수량, … 보유 수량이 0보다 큰 종목만 `holdings`.
-- `'App_관심종목'!A2:E` (있으면): 티커, 종목명, 시장(국장/미장). `watch`.
-- `'App_시그널'!A2:L` (있으면, 읽기 전용): B 신호일, D 티커, G 전략, H 신호. 최근 3거래일만 `signals`.
-- `'App_전망'!A2:J` (있으면, 읽기 전용): 작성일이 가장 최근인 행만 `weekly` (티커, 종목명, 단기, 중기, 장기).
-- `'App_재무추이'!A2:S` (있으면, 읽기 전용): B 일자, D 티커, L 올해 회계연도 말, M 올해 추정 EPS, N 내년 회계연도 말, O 내년 추정 EPS, P 목표주가. 보유·관심 종목의 최근 45일 행만 `fin`.
+## 2. input.json 쓰기 — 한 턴
+
+`ops/outlook/work/input.json` (폴더가 없으면 Write가 만든다):
 
 ```json
 {"date": "2026-11-10", "mode": "daily",
- "holdings": [{"ticker": "KRX:005930", "name": "삼성전자", "market": "KR"}],
- "watch": [{"ticker": "NASDAQ:MU", "name": "마이크론", "market": "US"}],
+ "holdings": [{"ticker": "KRX:005930", "name": "삼성전자"}], "watch": [{"ticker": "NASDAQ:MU", "name": "마이크론"}],
  "signals": [{"date": "2026-11-07", "ticker": "KRX:005930", "strategy": "추세추종", "signal": "매도·경계"}],
  "weekly": [{"ticker": "", "name": "시장 전체", "s": "중립", "m": "약강세", "l": "강세"}],
- "fin": [{"date": "2026-10-08", "ticker": "KRX:005930", "f0end": "2026-12-31", "f0eps": 40000,
-          "f1end": "2027-12-31", "f1eps": 52000, "target": 400000}]}
+ "fin": [{"date": "2026-10-08", "ticker": "KRX:005930", "f0end": "2026-12-31", "f0eps": 40000, "f1end": "2027-12-31", "f1eps": 52000, "target": 400000}]}
 ```
 
-- 날짜는 모두 `YYYY-MM-DD` 문자열, 숫자는 숫자로 넣는다. 보유 수량·금액은 넣지 않는다.
-- 시트에 접근할 수 없으면 아무것도 쓰지 말고 무엇이 막혔는지 보고하고 끝낸다.
+보유 수량·금액은 넣지 않는다. 날짜는 `YYYY-MM-DD` 문자열, 숫자는 숫자.
 
-## S1 시세 수집, S2 뉴스 수집
+## 3. 수집 — 한 턴
 
 ```bash
-cd ops/outlook
-python3 collect_market.py --input work/input.json --out work/market.json
-python3 collect_news.py --input work/input.json --out work/news.json
+cd ops/outlook && python3 collect.py --input work/input.json --work work
 ```
 
-둘 중 하나라도 종료 코드 2이면 중단한다. `not_ok` 항목은 그대로 두고 진행한다(인용 규칙은 공통 규칙 참고).
+출력되는 요약(ID 포함)만 근거로 쓴다. 종료 코드 2면 중단하고 보고한다.
 
-## S3 보완 조사 (웹 검색)
+## 4. 보완 조사 — 한 턴, 병렬 웹 검색 최대 3개
 
-공통 규칙의 용도 제한 안에서 검색해 `work/extra_sources.json`을 쓴다. 일간에서 확인할 것:
-- 오늘 국내외 경제지표 발표, 실적 발표, 정책 이벤트
-- `market.json`·`news.json`으로 부족한 종목별 최근 24시간 공시·뉴스 맥락
+오늘 국내외 경제지표·정책 일정, 오늘 실적 발표, 요약의 뉴스로 부족한 핵심 종목 맥락. 페이지 열람(WebFetch)은 날짜·수치 확인이 꼭 필요할 때만 2회 이내.
 
-## S4 해석 작성
+## 5. 해석 작성 — 한 턴, 두 파일 병렬 Write
 
-`work/market.json`, `work/news.json`, `work/extra_sources.json`, `work/input.json`만 근거로 `work/analysis.json`을 쓴다.
+- `ops/outlook/work/extra_sources.json`: 공통 규칙 형식. 쓸 것이 없으면 `{"items": []}`.
+- `ops/outlook/work/analysis.json`:
 
 ```json
 {"rows": [
-  {"key": "market", "outlook": "약강세", "summary": "1~2문장", "checkpoint": "오늘 볼 가격대·일정",
-   "nums": ["M3", "M9"], "src": ["N2", "W1"]},
-  {"key": "KRX:005930", "outlook": "중립", "summary": "...", "checkpoint": "지지 179,200 · 저항 217,655 · 앱 신호: 11/06 추세추종 매도·경계",
-   "nums": ["T11"], "src": ["N11"]}
+  {"key": "market", "outlook": "약강세", "summary": "1~2문장", "checkpoint": "오늘 볼 가격대·일정", "nums": ["M3", "M9"], "src": ["N2", "W1"]},
+  {"key": "KRX:005930", "outlook": "중립", "summary": "...", "checkpoint": "지지 179,200 · 저항 217,655 · 앱 신호: 11/06 추세추종 매도·경계", "nums": ["T11"], "src": ["N11"]}
 ]}
 ```
 
-- 행: `market` 1개, 그리고 `input.json`의 보유·관심 종목마다 1개(key = 티커). 빠지거나 더 있으면 검증에서 실패한다.
-- 시장 전체 전망에는 미국 지수선물(`market.json`의 `futures`) 흐름도 반영한다. 코스피200 야간선물은 다루지 않는다.
-- `summary` 1~2문장(220자 이내), `checkpoint` 200자 이내, `src` 최대 2개.
-- 레버리지 상품은 `market.json`의 `under_id` 항목(기초자산)을 기준으로 쓴다.
+- 행: `market` 1개 + 요약의 종목(T..)마다 1개(key = 티커). 기초자산(U..)은 행이 아니다.
+- 시장 전체 전망에 미국 지수선물 흐름도 반영한다.
+- `summary` 1~2문장(220자 이내, 마침표 2개 이하), `checkpoint` 200자 이내, `src` 최대 2개.
+- 레버리지 상품은 기초자산 기준. 변동성 손실 위험은 `checkpoint`에 짧게 쓴다(요약 문장 수 절약).
 
-## S5 검증·행 조립
-
-```bash
-python3 build_rows.py --input work/input.json --market work/market.json --news work/news.json \
-  --extra work/extra_sources.json --analysis work/analysis.json --out work/rows.json --sheet "$TARGET_SHEET"
-```
-
-종료 코드 1이면 errors를 고쳐 1회만 다시 실행한다. 다시 실패하면 쓰지 않고 중단한다.
-
-## S6 시트 기록, S7 기록 검증
-
-1. 공통 규칙의 "시트 쓰기" 순서대로 `TARGET_SHEET`에 기록한다.
-2. 공통 규칙의 "기록 검증용 재조회"대로 다시 읽어 `work/readback.json`에 저장한다. 행이 적으면 `'TARGET_SHEET'!A1:H` 전체, 많으면 1행과 오늘 행 범위(A:H) 그리고 A열 전체. 읽은 값을 그대로 저장한다.
-3. 검증한다.
+## 6. 검증·행 조립 — 한 턴
 
 ```bash
-python3 verify_written.py --rows work/rows.json --readback work/readback.json
+cd ops/outlook && python3 build_rows.py --input work/input.json --market work/market.json --news work/news.json \
+  --extra work/extra_sources.json --analysis work/analysis.json --out work/rows.json --sheet "$TARGET_SHEET" \
+  && python3 -c "import json;r=json.load(open('work/rows.json'));print(json.dumps(r,ensure_ascii=False))"
 ```
 
-종료 코드 1이면 S6부터 다시(최대 2회). 그래도 실패하면 오늘 행을 지우고 중단한다.
+종료 코드 1이면 errors에 나온 행만 Edit로 고치고 1회만 다시 실행한다. 다시 실패하면 쓰지 않고 중단한다.
+
+## 7. 기록 — 최대 3턴
+
+1. `'TARGET_SHEET'!A:A`를 읽는다(없으면 시트를 만들고 1행에 `header`를 쓴다).
+2. A열이 `date`인 행(맨 아래 연속 구간)과 `delete_before`보다 이전인 행(맨 위 연속 구간)을 한 번의 요청으로 지운다. 아래쪽 구간부터 지운다. 지울 행이 없으면 건너뛴다.
+3. `rows.json`의 `rows`를 마지막 행 아래에 그대로 추가한다. 기록된 시작 행 번호를 기억한다.
+
+## 8. 기록 검증 — 2턴
+
+1. 한 번의 요청(또는 병렬)으로 `'TARGET_SHEET'!A1:E2`와 오늘 기록한 범위 `'TARGET_SHEET'!A{시작}:E{끝}`을 읽는다.
+2. 읽은 값을 **그대로** 옮겨 `work/readback.json`에 쓰고 검증한다:
+   `{"values": [A1:E1 행, 오늘 행들...], "dates": [A2 값]}`
+
+```bash
+cd ops/outlook && python3 verify_written.py --rows work/rows.json --readback work/readback.json --cols 5
+```
+
+종료 코드 1이면 7부터 다시(최대 2회). 그래도 실패하면 오늘 행을 지우고 중단한다.
 
 ## 마무리
 
-S7이 0일 때만 성공으로 보고한다. 1~2줄로 남긴다: 오늘 시장 분위기 한 줄, 주목할 종목 1~2개. 주식일지 앱의 분석 → 전망 → 일간에서 확인할 수 있다고 덧붙인다. 실패했으면 실패한 단계와 errors를 그대로 보고한다.
+8단계가 0일 때만 성공으로 보고한다. 2줄: 오늘 시장 분위기, 주목할 종목 1~2개. "주식일지 앱의 분석 → 전망 → 일간에서 확인할 수 있습니다." 실패했으면 실패한 단계와 errors를 그대로 보고한다.
