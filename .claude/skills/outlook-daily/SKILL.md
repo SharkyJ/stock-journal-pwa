@@ -85,7 +85,7 @@ python3 build_rows.py --input work/input.json --market work/market.json --news w
 ## S6 시트 기록, S7 기록 검증
 
 1. 공통 규칙의 "시트 쓰기" 순서대로 `TARGET_SHEET`에 기록한다.
-2. `'TARGET_SHEET'!A1:H`를 다시 읽어 `{"values": [...]}` 형식으로 `work/readback.json`에 저장한다(읽은 값을 그대로).
+2. 공통 규칙의 "기록 검증용 재조회"대로 다시 읽어 `work/readback.json`에 저장한다. 행이 적으면 `'TARGET_SHEET'!A1:H` 전체, 많으면 1행과 오늘 행 범위(A:H) 그리고 A열 전체. 읽은 값을 그대로 저장한다.
 3. 검증한다.
 
 ```bash
