@@ -11,10 +11,15 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 
+import build_events as BE  # noqa: E402
 import build_rows as B  # noqa: E402
+import collect_calendar as K  # noqa: E402
+import collect_events as E  # noqa: E402
 import collect_market as M  # noqa: E402
 import collect_news as N  # noqa: E402
 import common as C  # noqa: E402
+import news_score as S  # noqa: E402
+import plan_write as W  # noqa: E402
 import verify_written as V  # noqa: E402
 
 CFG = C.load_config()
@@ -223,8 +228,8 @@ class TestWeekly(unittest.TestCase):
         res, errs = B.build(i, market_fixture(), news_fixture(), ex, a, CFG)
         self.assertEqual(errs, [])
         self.assertEqual(res["sheet"], "App_전망")
-        self.assertEqual(len(res["header"]), 10)
-        self.assertEqual([len(r) for r in res["rows"]], [10] * 4)
+        self.assertEqual(len(res["header"]), 11)
+        self.assertEqual([len(r) for r in res["rows"]], [11] * 4)
         self.assertEqual(res["rows"][0][4:7], ["중립", "약강세", "강세"])
         self.assertEqual(res["delete_before"], "2026-08-17")
 
@@ -249,40 +254,214 @@ class TestDigest(unittest.TestCase):
             self.assertTrue(B.matches(v, dec, B.flat_numbers(m["items"])), raw)
 
 
-class TestVerify(unittest.TestCase):
+class TestPlanVerify(unittest.TestCase):
     def rows(self):
-        res, _ = B.build(inp_daily(), market_fixture(), news_fixture(), {"items": []}, analysis_ok(), CFG)
+        res, _ = B.build(inp_daily(), market_fixture(), news_fixture(), {"items": []}, analysis_ok(), CFG,
+                         now=datetime(2026, 11, 9, 7, 25, tzinfo=C.KST))
         return json.loads(json.dumps(res))
 
-    def test_match(self):
-        r = self.rows()
-        vals = [r["header"], ["2026-10-20", "시장", "", "시장 전체"]] + [list(x) for x in r["rows"]]
-        vals[2][0] = "2026. 11. 9"
-        self.assertEqual(V.verify(r, {"values": vals}), [])
+    def cola(self, dates, sheet="App_일간전망"):
+        return {"range": f"'{sheet}'!A1:A{len(dates) + 1}", "values": [["작성일"]] + [[d] for d in dates]}
 
-    def test_partial_readback_with_dates(self):
+    def test_written_at_column(self):
         r = self.rows()
-        vals = [r["header"]] + [list(x) for x in r["rows"]]
-        self.assertEqual(V.verify(r, {"values": vals, "dates": [["작성일"], ["2026-11-01"], ["2026-11-09"]]}), [])
-        errs = V.verify(r, {"values": vals, "dates": [["2026-09-30"]]})
-        self.assertTrue(any("보관 기간" in e for e in errs))
+        self.assertEqual(r["header"][-1], "작성시각")
+        self.assertEqual(r["rows"][0][-1], "2026-11-09 07:25")
 
-    def test_cols_partial(self):
+    def test_plan_deletes_today_and_old(self):
         r = self.rows()
-        vals = [r["header"][:5]] + [list(x[:5]) for x in r["rows"]]
-        self.assertEqual(V.verify(r, {"values": vals}, cols=5), [])
-        vals[1][4] = "강세" if vals[1][4] != "강세" else "약세"
-        self.assertTrue(V.verify(r, {"values": vals}, cols=5))
+        dates = ["2026-10-01", "2026-10-01", "2026-10-20", "2026-11-09", "2026-11-09"]
+        p = W.plan(r, 77, self.cola(dates))
+        # 아래쪽(오늘 5~6행)부터, 그다음 보관 기간 지난 2~3행
+        self.assertEqual([x["deleteDimension"]["range"]["startIndex"] for x in p["requests"]], [4, 1])
+        self.assertEqual([x["deleteDimension"]["range"]["endIndex"] for x in p["requests"]], [6, 3])
+        self.assertEqual(p["expect"]["start"], 3)  # 헤더 + 10-20 한 행 남음
+        self.assertEqual(p["readback"], ["'App_일간전망'!A1:E2", f"'App_일간전망'!A3:E{2 + len(r['rows'])}"])
+        self.assertIsNone(p["header_update"])
+        head = {"range": "'App_일간전망'!A1:Z1", "values": [r["header"][:8]]}
+        self.assertTrue(W.plan(r, 77, self.cola(dates), head)["header_update"])  # 작성시각 열 추가
 
-    def test_mismatch_and_old(self):
+    def test_plan_rejects_wrong_sheet_or_raw(self):
         r = self.rows()
-        vals = [r["header"], ["2026-10-01", "시장"]] + [list(x) for x in r["rows"][:-1]]
-        vals[3][5] = "다른 요약"
-        errs = V.verify(r, {"values": vals})
-        joined = "\n".join(errs)
-        self.assertIn("행 수", joined)
-        self.assertIn("요약", joined)
-        self.assertIn("보관 기간", joined)
+        with self.assertRaises(ValueError):
+            W.plan(r, 1, self.cola([], "다른시트"))
+        with self.assertRaises(ValueError):
+            W.plan(r, 1, {"values": [["작성일"]]})
+
+    def responses(self, p, mutate=None):
+        vals = [list(x) for x in p["append"]["values"]]
+        app = {"updates": {"updatedRange": f"'{p['sheet']}'!A{p['expect']['start']}:I{p['expect']['end']}",
+                           "updatedRows": p["expect"]["rows"]}}
+        rb1 = {"range": p["readback"][0], "values": [p["header"][:5], ["2026-10-20", "시장", "", "시장 전체", "중립"]]}
+        body = [x[:5] for x in vals]
+        body[0][0] = "2026. 11. 9"
+        if mutate:
+            mutate(body)
+        rb2 = {"range": p["readback"][1], "values": body}
+        return app, [rb1, rb2]
+
+    def test_verify_ok(self):
+        p = W.plan(self.rows(), 77, self.cola(["2026-10-20"]))
+        app, rbs = self.responses(p)
+        self.assertEqual(V.verify(p, app, rbs), [])
+
+    def test_verify_rejects_fabricated_readback(self):
+        p = W.plan(self.rows(), 77, self.cola(["2026-10-20"]))
+        app, rbs = self.responses(p)
+        fake = [{"values": rbs[0]["values"]}, {"values": rbs[1]["values"]}]  # rows.json 에서 만든 형태
+        self.assertTrue(any("원문이 아님" in e for e in V.verify(p, app, fake)))
+        self.assertTrue(any("원문이 아님" in e for e in V.verify(p, {"rows": 1}, rbs)))
+
+    def test_verify_position_and_value(self):
+        p = W.plan(self.rows(), 77, self.cola(["2026-10-20"]))
+        app, rbs = self.responses(p, lambda b: b[1].__setitem__(4, "강세" if b[1][4] != "강세" else "약세"))
+        app["updates"]["updatedRange"] = "'App_일간전망'!A9:I12"
+        errs = "\n".join(V.verify(p, app, rbs))
+        self.assertIn("추가 위치", errs)
+        self.assertIn("오늘 전망", errs)
+
+    def test_verify_old_rows_left(self):
+        p = W.plan(self.rows(), 77, self.cola(["2026-10-20"]))
+        app, rbs = self.responses(p)
+        rbs[0]["values"][1][0] = "2026-09-01"
+        self.assertTrue(any("보관 기간" in e for e in V.verify(p, app, rbs)))
+
+
+def cal_raw():
+    return {"status": "ok", "result": [
+        {"id": "1", "title": "Inflation Rate YoY", "country": "US", "date": "2026-11-10T13:30:00.000Z", "importance": 1,
+         "actual": "4.1", "actualRaw": 4.1, "forecast": "3.9", "forecastRaw": 3.9, "previous": "3.7", "previousRaw": 3.7,
+         "unit": "%", "period": "Oct. 2026"},
+        {"id": "2", "title": "Non Farm Payrolls", "country": "US", "date": "2026-11-06T13:30:00.000Z", "importance": 1,
+         "actual": "165", "actualRaw": 165000, "forecast": "65", "forecastRaw": 65000, "previous": "60", "previousRaw": 60000},
+        {"id": "3", "title": "Interest Rate Decision", "country": "KR", "date": "2026-11-26T01:00:00.000Z", "importance": 0,
+         "actual": None, "actualRaw": 0, "forecast": None, "previous": "3", "previousRaw": 3},
+        {"id": "4", "title": "3-Month Bill Auction Bid-to-Cover", "country": "US", "date": "2026-11-09T16:30:00.000Z",
+         "importance": 0, "actual": "2.67", "actualRaw": 2.67},
+        {"id": "5", "title": "Something minor", "country": "US", "date": "2026-11-09T16:30:00.000Z", "importance": -1},
+    ]}
+
+
+class TestCalendar(unittest.TestCase):
+    def test_judge_bias(self):
+        j = K.judge_bias("Inflation Rate YoY", "", 1, 4.1, 3.9, 3.7, "4.1", "3.9", "3.7")
+        self.assertEqual((j["bias"], j["category"]), ("악재", "inflation"))  # 물가 예상 상회
+        self.assertLess(j["score"], -0.5)
+        self.assertEqual(K.judge_bias("Fed Interest Rate Decision", "", 1, 3.5, None, 3.75, "3.5", None, "3.75")["bias"], "호재")
+        self.assertEqual(K.judge_bias("Fed Interest Rate Decision", "", 1, 3.75, None, 3.75, "3.75", None, "3.75")["bias"], "중립")
+        nfp = K.judge_bias("Non Farm Payrolls", "", 1, 165000, 65000, 60000, "165", "65", "60")
+        self.assertEqual(nfp["bias"], "혼조")
+        self.assertEqual(K.judge_bias("CPI", "", 1, None, 3.0, 2.9)["bias"], "예정")
+
+    def test_collect(self):
+        now = datetime(2026, 11, 11, 7, 0, tzinfo=C.KST)
+        res = K.collect({"date": "2026-11-11", "mode": "daily"}, CFG, fetch=lambda u: json.dumps(cal_raw()), now=now)
+        titles = [res["items"][i]["title"] for i in res["order"]]
+        self.assertNotIn("3-Month Bill Auction Bid-to-Cover", titles)
+        self.assertNotIn("Something minor", titles)
+        kr = [res["items"][i] for i in res["order"] if res["items"][i]["country"] == "KR"][0]
+        self.assertTrue(kr["high"])  # 금통위는 중요도 0 이어도 고영향
+        self.assertEqual(kr["bias"], "예정")
+        cpi = res["items"]["C2"]
+        self.assertEqual((cpi["title_ko"], cpi["at"]), ("CPI 전년비", "2026-11-10T22:30+09:00"))
+        self.assertEqual(res["tone"]["count"], 2)
+
+    def test_fail_open(self):
+        def boom(u):
+            raise OSError("403")
+        res = K.collect({"date": "2026-11-11", "mode": "daily"}, CFG, fetch=boom)
+        self.assertEqual(res["status"], "unavailable")
+
+
+class TestNewsScore(unittest.TestCase):
+    def test_negation_and_tags(self):
+        self.assertEqual(S.score("Fed signals no recession ahead")["hint"], "중립")
+        s = S.score("Micron plunges as memory glut worsens", [("NASDAQ:MU", "MU")])
+        self.assertEqual(s["hint"], "악재")
+        self.assertEqual(s["tags"][0], "MU")
+        self.assertIn("메모리", s["tags"])
+        self.assertEqual(S.score("삼성전자 급등, 외국인 순매수")["hint"], "호재")
+
+    def test_relevant(self):
+        self.assertEqual(S.relevant("Nvidia shares drop", "NASDAQ:NVDA"), "alias")
+        self.assertEqual(S.relevant("Warby Parker prospects brighter", "NASDAQ:GOOG"), "")
+        self.assertEqual(S.relevant("Chip stocks rebound", "NASDAQ:INTC"), "sector")
+
+    def test_collect_drops_irrelevant_yahoo(self):
+        xml = (b'<rss><channel><item><title>Warby Parker prospects brighter</title><link>https://y/1</link>'
+               b'<pubDate>Mon, 09 Nov 2026 08:00:00 +0000</pubDate></item>'
+               b'<item><title>Micron rises on HBM demand</title><link>https://y/2</link>'
+               b'<pubDate>Mon, 09 Nov 2026 08:00:00 +0000</pubDate></item></channel></rss>')
+        res = N.collect(inp_daily(), CFG, fetch=lambda u: xml if "yahoo" in u else b"<rss><channel></channel></rss>",
+                        now=datetime(2026, 11, 9, 18, 0, tzinfo=C.KST))
+        titles = [x["title"] for x in res["items"]]
+        self.assertIn("Micron rises on HBM demand", titles)
+        self.assertNotIn("Warby Parker prospects brighter", titles)
+        it = [x for x in res["items"] if x["title"].startswith("Micron")][0]
+        self.assertEqual(it["hint"], "호재")
+
+
+NVDA_DATE = {"data": {"reportText": "NVIDIA Corporation Common Stock is expected* to report earnings on  11/17/2026 after "
+                      "market close.  The report will be for the fiscal Quarter ending Oct 2026.  According to Zacks Investment "
+                      "Research, based on  13 analysts'  forecasts, the consensus EPS forecast for the quarter is $2.49.  The "
+                      "reported EPS for the same quarter last year was $1.24.",
+                      "announcement": "Earnings announcement* for NVDA: Nov 17, 2026"}}
+NVDA_SURP = {"data": {"earningsSurpriseTable": {"rows": [
+    {"fiscalQtrEnd": "Jul 2026", "dateReported": "8/26/2026", "eps": 2.22, "consensusForecast": "2.09", "percentageSurprise": "6.22"}]}}}
+
+
+class TestEvents(unittest.TestCase):
+    def test_parse(self):
+        p = E.parse_earnings_date(NVDA_DATE)
+        self.assertEqual((p["date"], p["time"], p["confirm"], p["fiscal"]), ("2026-11-17", "장 마감 후", "예정", "Oct 2026"))
+        self.assertEqual((p["consensus_eps"], p["prev_eps"]), (2.49, 1.24))
+        est = {"data": {"reportText": "Micron is estimated to report earnings on  12/16/2026. The upcoming earnings date is "
+                        "derived from an algorithm", "announcement": ""}}
+        self.assertEqual(E.parse_earnings_date(est)["confirm"], "예상")
+        self.assertIsNone(E.parse_earnings_date({"data": {}}))
+        self.assertEqual(E.parse_surprise(NVDA_SURP)[0]["surprise_pct"], 6.22)
+
+    def collect(self):
+        inp, _ = C.normalize_input({"date": "2026-11-10", "mode": "daily", "holdings": [
+            {"ticker": "NASDAQ:NVDA", "name": "NVDA"}, {"ticker": "NYSEARCA:SOXL", "name": "SOXL"},
+            {"ticker": "KRX:069500", "name": "KODEX 200"}, {"ticker": "KRX:005930", "name": "삼성전자"}]})
+        market = {"tickers": [{"ticker": "NASDAQ:NVDA", "id": "T1"}, {"ticker": "NYSEARCA:SOXL", "id": "T2"},
+                              {"ticker": "KRX:069500", "id": "T3"}, {"ticker": "KRX:005930", "id": "T4"}],
+                  "items": {"T1": {"next_earnings": "2026-11-18"}, "T2": {}, "T3": {"qtype": "ETF"},
+                            "T4": {"next_earnings": "2027-01-29"}}}
+        cfg = json.loads(json.dumps(CFG)); cfg["http"]["delay_sec"] = 0
+        return E.collect(inp, market, cfg, fetch=lambda u: json.dumps(NVDA_SURP if "surprise" in u else NVDA_DATE))
+
+    def test_collect(self):
+        res = self.collect()
+        self.assertEqual(set(res["skipped"]), {"NYSEARCA:SOXL", "KRX:069500"})
+        its = [res["items"][i] for i in res["order"]]
+        nx = [o for o in its if o["ticker"] == "NASDAQ:NVDA" and o["status"] == "예정"][0]
+        self.assertEqual((nx["days"], nx["xstatus"]), (7, "ok"))
+        self.assertIn("차이 1일", nx["check"])
+        self.assertTrue(any(o["ticker"] == "KRX:005930" and o["date"] == "2027-01-29" for o in its))
+        self.assertTrue(any(o["status"] == "발표" for o in its))
+
+    def test_events_rows_and_upsert(self):
+        res = self.collect()
+        now = datetime(2026, 11, 11, 7, 0, tzinfo=C.KST)
+        cal = K.collect({"date": "2026-11-11", "mode": "daily"}, CFG, fetch=lambda u: json.dumps(cal_raw()), now=now)
+        er = BE.build(cal, res, CFG, now=now)
+        ids = [r[0] for r in er["rows"]]
+        self.assertIn("ER-NASDAQ:NVDA-NEXT", ids)
+        self.assertIn("ER-NASDAQ:NVDA-2026-08-26", ids)
+        self.assertIn("TV-3", ids)
+        h = er["header"]
+        vi = h.index("버전")
+        # 시트에 같은 버전 1행, 다른 버전 1행이 있다
+        same, diff = er["rows"][0], er["rows"][1]
+        cola = {"range": "'App_주요일정'!A1:B4", "values": [h[:2], [same[0], same[vi]], [diff[0], "v0"], ["TV-old", "v1"]]}
+        p = W.plan(er, 9, cola)
+        self.assertEqual(p["deleted_rows"], 1)
+        self.assertEqual(p["expect"]["rows"], len(er["rows"]) - 1)
+        self.assertEqual(p["expect"]["start"], 4)  # 헤더 + 남은 2행 다음
+        self.assertNotIn(same, p["append"]["values"])
+        self.assertEqual(p["readback"], [f"'App_주요일정'!A4:C{3 + p['expect']['rows']}"])
 
 
 if __name__ == "__main__":

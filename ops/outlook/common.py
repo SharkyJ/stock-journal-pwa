@@ -40,13 +40,15 @@ def iso_kst(ts):
     return datetime.fromtimestamp(ts, KST).isoformat(timespec="minutes")
 
 
-def http_get(url, cfg, accept="application/json"):
+def http_get(url, cfg, accept="application/json", headers=None):
     """GET 요청. 재시도·지수 백오프. 실패하면 예외."""
     h = cfg["http"]
     last = None
     for i in range(h["retries"]):
         try:
-            req = urllib.request.Request(url, headers={"User-Agent": "stock-journal-outlook/1.0", "Accept": accept})
+            hd = {"User-Agent": "stock-journal-outlook/1.0", "Accept": accept}
+            hd.update(headers or {})
+            req = urllib.request.Request(url, headers=hd)
             with urllib.request.urlopen(req, timeout=h["timeout_sec"]) as r:
                 return r.read()
         except (urllib.error.URLError, TimeoutError, ConnectionError) as e:

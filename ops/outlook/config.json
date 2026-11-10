@@ -30,25 +30,36 @@
   "news": {
     "market_queries": [
       {"q": "코스피 증시", "lang": "ko"},
-      {"q": "Wall Street stocks S&P 500 Nasdaq", "lang": "en"}
+      {"q": "Wall Street stocks S&P 500 Nasdaq", "lang": "en"},
+      {"q": "(Federal Reserve OR FOMC OR inflation OR semiconductor) -Bitcoin -crypto", "lang": "en"}
     ],
+    "fed_rss": true,
+    "fed_max": 3,
+    "fed_hours": 168,
+    "rank_by_score": true,
     "market_max": 5,
     "ticker_max": 3,
     "yahoo_rss": true,
     "yahoo_max": 2,
     "window_hours": {"daily": 24, "weekly": 336}
   },
+  "calendar": {"enabled": true, "countries": "US,KR", "days_back": 4, "days_ahead": 14, "max": 120, "digest_max": 14},
+  "events": {"enabled": true, "nasdaq": true, "near_days": 3, "results": 4},
   "outlook_values": ["강세", "약강세", "중립", "약약세", "약세"],
   "sheets": {
     "daily": {
       "name": "App_일간전망",
-      "header": ["작성일", "구분", "티커", "종목명", "오늘 전망", "요약", "체크포인트", "출처"],
+      "header": ["작성일", "구분", "티커", "종목명", "오늘 전망", "요약", "체크포인트", "출처", "작성시각"],
       "keep_days": 30
     },
     "weekly": {
       "name": "App_전망",
-      "header": ["작성일", "구분", "티커", "종목명", "단기", "중기", "장기", "요약", "근거·이벤트", "출처"],
+      "header": ["작성일", "구분", "티커", "종목명", "단기", "중기", "장기", "요약", "근거·이벤트", "출처", "작성시각"],
       "keep_days": 84
+    },
+    "events": {
+      "name": "App_주요일정",
+      "header": ["ID", "버전", "구분", "일시", "대상", "종목명", "제목", "중요도", "상태", "예상", "이전", "실제", "판정", "점수", "세부", "출처", "갱신시각"]
     }
   },
   "limits": {

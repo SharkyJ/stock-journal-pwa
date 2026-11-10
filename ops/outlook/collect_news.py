@@ -1,7 +1,9 @@
 """S2 뉴스 수집 (준결정적).
 
-Google News RSS(시장·종목)와 Yahoo Finance 종목 헤드라인 RSS(미국 종목,
-config news.yahoo_rss 로 끔)에서 기사를 모아 중복을 없애고 ID(N1..)를 붙인다.
+연준 보도자료 RSS(config news.fed_rss), Google News RSS(시장·거시·종목), Yahoo Finance 종목 헤드라인
+RSS(미국 종목, config news.yahoo_rss)에서 기사를 모아 중복을 없애고 ID(N1..)를 붙인다.
+기사마다 news_score 로 태그·호재/악재 후보·종목 관련도를 붙이고, 미국 종목 피드는 관련 없는 기사를 뺀다.
+출처와 선별 로직은 bluedbs/invest-trading-bot src/news.js 를 참고했다.
 LLM 은 기사 ID 만 인용하며, URL 은 이 파일의 결과에서 코드가 채운다.
 Google News RSS 는 개인·비상업 용도로만 쓸 수 있다(피드 저작권 고지).
 
@@ -18,6 +20,7 @@ from datetime import timedelta
 from email.utils import parsedate_to_datetime
 
 import common as C
+import news_score as S
 
 LANG = {"ko": ("ko", "KR", "KR:ko"), "en": ("en-US", "US", "US:en")}
 
@@ -30,6 +33,7 @@ def rss_url(q, lang, hours):
 
 
 YAHOO_RSS = "https://feeds.finance.yahoo.com/rss/2.0/headline?"
+FED_RSS = "https://www.federalreserve.gov/feeds/press_monetary.xml"
 
 
 def yahoo_url(sym):
@@ -62,12 +66,15 @@ def parse_rss(xml_bytes, default_source=""):
     return out
 
 
-def pick(items, now, hours, limit, seen_urls, seen_titles):
-    """기간 필터 → 최신순 → 중복 제거 → limit 건."""
+def pick(items, now, hours, limit, seen_urls, seen_titles, keep=None, rank=None):
+    """기간 필터 → (keep 통과) → 최신순(rank 가 있으면 rank 우선) → 중복 제거 → limit 건."""
     lo = now - timedelta(hours=hours)
     res = []
-    for o in sorted((x for x in items if x["published"] and x["published"] >= lo),
-                    key=lambda x: x["published"], reverse=True):
+    cand = [x for x in items if x["published"] and x["published"] >= lo and (keep is None or keep(x))]
+    cand.sort(key=lambda x: x["published"], reverse=True)
+    if rank:
+        cand.sort(key=rank, reverse=True)  # 안정 정렬: 같은 순위는 최신순 유지
+    for o in cand:
         nt = norm_title(o["title"])
         if o["url"] in seen_urls or nt in seen_titles:
             continue
@@ -108,25 +115,45 @@ def yahoo_queries(inp, cfg):
     return out
 
 
+def tracked(inp):
+    return [(h["ticker"], h["name"]) for k in ("holdings", "watch") for h in inp[k]]
+
+
 def collect(inp, cfg, fetch=None, now=None):
     now = now or C.now_kst()
-    hours = cfg["news"]["window_hours"][inp["mode"]]
+    nc = cfg["news"]
+    hours = nc["window_hours"][inp["mode"]]
     fetch = fetch or (lambda url: C.http_get(url, cfg, accept="application/rss+xml"))
     seen_urls, seen_titles, items, errors = set(), set(), [], []
+    names = {h["ticker"]: h["name"] for k in ("holdings", "watch") for h in inp[k]}
+    tr = tracked(inp)
     n = 0
-    jobs = [(scope, q, limit, rss_url(q, lang, hours), "") for scope, q, lang, limit in queries(inp, cfg)]
-    jobs += [(scope, f"yahoo {sym}", limit, yahoo_url(sym), "Yahoo Finance")
+    # (scope, 설명, limit, url, 기본 출처, 기간, 관련도 필터 여부)
+    jobs = []
+    if nc.get("fed_rss", False):
+        jobs.append(("fed", "Federal Reserve", nc.get("fed_max", 3), FED_RSS, "Federal Reserve",
+                     max(hours, nc.get("fed_hours", 168)), False))
+    jobs += [(scope, q, limit, rss_url(q, lang, hours), "", hours, scope != "market" and lang == "en")
+             for scope, q, lang, limit in queries(inp, cfg)]
+    jobs += [(scope, f"yahoo {sym}", limit, yahoo_url(sym), "Yahoo Finance", hours, True)
              for scope, sym, limit in yahoo_queries(inp, cfg)]
-    for scope, q, limit, url, dsrc in jobs:
+    rank = (lambda x: abs(S.score(x["title"])["score"])) if nc.get("rank_by_score", True) else None
+    for scope, q, limit, url, dsrc, hrs, filt in jobs:
         try:
             got = parse_rss(fetch(url), dsrc)
         except Exception as e:  # noqa: BLE001
             errors.append(f"{scope} '{q}': {e}")
             continue
-        for o in pick(got, now, hours, limit, seen_urls, seen_titles):
+        keep = (lambda x, s=scope: bool(S.relevant(x["title"], s, names.get(s, "")))) if filt else None
+        for o in pick(got, now, hrs, limit, seen_urls, seen_titles, keep, rank if scope in ("market", "fed") else None):
             n += 1
-            items.append({"id": f"N{n}", "scope": scope, "title": o["title"], "source": o["source"],
-                          "url": o["url"], "published": o["published"].isoformat(timespec="minutes")})
+            sc = S.score(o["title"], tr)
+            it = {"id": f"N{n}", "scope": scope, "title": o["title"], "source": o["source"],
+                  "url": o["url"], "published": o["published"].isoformat(timespec="minutes"),
+                  "hint": sc["hint"], "tags": sc["tags"]}
+            if sc["reasons"]:
+                it["reasons"] = sc["reasons"]
+            items.append(it)
         time.sleep(cfg["http"]["delay_sec"])
     return {"date": inp["date"], "mode": inp["mode"], "window_hours": hours,
             "generated_at": now.isoformat(timespec="minutes"), "items": items, "errors": errors}

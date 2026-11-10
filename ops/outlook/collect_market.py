@@ -96,7 +96,7 @@ def fund_metrics(f, price):
     px = price or f.get("px")
     m = {"per": r2(f.get("per")), "fwd_per": r2(f.get("fper")), "eps": r2(f.get("eps")),
          "fwd_eps": r2(f.get("feps")), "target": r2(f.get("tgt")), "rec": r2(f.get("rec")),
-         "ntm_eps": r2(f.get("ntmEps"))}
+         "ntm_eps": r2(f.get("ntmEps")), "qtype": f.get("type") or None}
     if f.get("ntmEps") and f["ntmEps"] > 0 and px:
         m["ntm_per"] = r2(px / f["ntmEps"])
     if f.get("tgt") and px:

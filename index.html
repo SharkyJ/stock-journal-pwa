@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-Fl07JEyeIMVPGC89et6BRKrXrCfhHP2pUOLD6Q6jueQ=' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; connect-src https://sheets.googleapis.com https://www.googleapis.com https://oauth2.googleapis.com https://accounts.google.com/gsi/ https://*.workers.dev https://script.google.com https://script.googleusercontent.com; frame-src https://accounts.google.com/gsi/; img-src 'self' data:; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-lVgYfosqinsp1PehtTRhcX7dRVMD3hCAptIDOl/vPCw=' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; connect-src https://sheets.googleapis.com https://www.googleapis.com https://oauth2.googleapis.com https://accounts.google.com/gsi/ https://*.workers.dev https://script.google.com https://script.googleusercontent.com; frame-src https://accounts.google.com/gsi/; img-src 'self' data:; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
 <meta name="robots" content="noindex,nofollow">
 <meta name="theme-color" content="#0b0f17">
@@ -172,6 +172,13 @@ nav.bot button.on{color:var(--tx)}
 .mkg{display:grid;grid-template-columns:1fr;gap:16px}@media (min-width:520px){.mkg{grid-template-columns:1fr 1fr}}
 .mkx{min-width:0}.spk{display:block;width:100%;height:44px;margin-top:6px}
 .reg.ok .big{color:var(--up)}.reg.bad .big{color:var(--dn)}.reg.mid .big{color:var(--warn)}
+.calg{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:3px;margin-top:6px}.calg.hd div{font-size:11px;color:var(--tx3);text-align:center}
+.cd{min-height:58px;border-radius:8px;background:var(--bg2);padding:3px 2px;display:flex;flex-direction:column;align-items:stretch;gap:2px;overflow:hidden;text-align:left}.cd.x{background:none}
+.cd b{font-size:12px;font-weight:650;padding-left:2px}.cd.su b{color:var(--up)}.cd.sa b{color:var(--dn)}.cd.td{outline:1px solid var(--ac)}.cd.on{background:var(--acs)}
+.ct{font-style:normal;font-size:9.5px;line-height:1.35;border-radius:4px;padding:0 3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:var(--card2);color:var(--tx2)}.ct.e{border-left:2px solid var(--warn)}.ct.c{border-left:2px solid var(--ac)}
+.ct.g{color:var(--up)}.ct.b{color:var(--dn)}.cm{font-style:normal;font-size:9.5px;color:var(--tx3);padding-left:2px}
+.evr{grid-template-columns:1fr auto}.evk{font-size:10.5px;font-weight:700;padding:1px 5px;border-radius:5px;background:var(--bg2);color:var(--tx2)}.evk.e{color:var(--warn)}.evk.c{color:var(--ac)}.evi{color:var(--warn);font-size:9px}
+.evb{display:inline-block;font-size:11px;font-weight:700;padding:2px 7px;border-radius:7px;background:var(--bg2);color:var(--tx2)}.evb.g{background:rgba(240,68,82,.14);color:var(--up)}.evb.b{background:rgba(61,139,255,.15);color:var(--dn)}.evb.m{color:var(--tx2)}.evb.p{background:none;border:1px solid var(--line);color:var(--tx3)}
 .olc{padding:12px 0;border-bottom:1px solid var(--line)}.olc:last-child{border-bottom:0}.olc a{color:var(--ac)}
 .hzg{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
 .hzb{background:var(--bg2);border-radius:12px;padding:10px;min-width:0}.hzb>span{display:block;font-size:11.5px;color:var(--tx3)}.hzb>b{display:block;font-size:13.5px;margin:2px 0 4px}
@@ -229,11 +236,11 @@ code{background:var(--bg2);padding:1px 5px;border-radius:5px;font-size:12.5px}
 <script>
 'use strict';
 /* ================= 상수 / 유틸 ================= */
-const VERSION='1.10.2';
+const VERSION='1.11.0';
 const SH='https://sheets.googleapis.com/v4/spreadsheets';
 const SHEETS_SCOPE='https://www.googleapis.com/auth/spreadsheets';
 const SCOPES=SHEETS_SCOPE+' openid email';
-const APP={plan:'App_매매계획',review:'App_매매회고',snap:'App_자산추이',watch:'App_관심종목',outlook:'App_전망',daily:'App_일간전망',signal:'App_시그널',fin:'App_재무추이',inbox:'App_체결수신'};
+const APP={plan:'App_매매계획',review:'App_매매회고',snap:'App_자산추이',watch:'App_관심종목',outlook:'App_전망',daily:'App_일간전망',signal:'App_시그널',fin:'App_재무추이',inbox:'App_체결수신',event:'App_주요일정'};
 const APPK=Object.keys(APP);
 const CASH='현금투자';
 const HDR={
@@ -241,13 +248,14 @@ const HDR={
   review:['거래키','시장','종목탭','거래일자','구분','수량','단가','전략태그','감정','회고','평점','작성일'],
   snap:['일자','투자원금(KRW)','총평가자산(KRW)','총손익(KRW)','수익률','국장 총평가(KRW)','미장 총평가(USD)','예수금(KRW환산)','환율(USD/KRW)','국장 원금(KRW)','미장 원금(USD)','기록시각'],
   watch:['티커','종목명','시장','메모','추가일'],
-  outlook:['작성일','구분','티커','종목명','단기','중기','장기','요약','근거·이벤트','출처'],
-  daily:['작성일','구분','티커','종목명','오늘 전망','요약','체크포인트','출처'],
+  outlook:['작성일','구분','티커','종목명','단기','중기','장기','요약','근거·이벤트','출처','작성시각'],
+  daily:['작성일','구분','티커','종목명','오늘 전망','요약','체크포인트','출처','작성시각'],
+  event:['ID','버전','구분','일시','대상','종목명','제목','중요도','상태','예상','이전','실제','판정','점수','세부','출처','갱신시각'],
   signal:['키','신호일','시장','티커','종목명','구분','전략','신호','근거','가격','기준 심볼','기록시각'],
   inbox:['키','수신시각','증권사','계좌구분','유형','거래일자','티커','종목명','수량','단가','수수료·세금','원화금액','달러금액','환율','통화','상태','반영위치','원본요약'],
   fin:['키','일자','시장','티커','종목명','현재가','실적 PER','12개월 선행 PER','포워드 PER','실적 EPS','12개월 선행 EPS','올해 회계연도 말','올해 추정 EPS','내년 회계연도 말','내년 추정 EPS','목표주가','투자의견(5=강력매수)','출처','기록시각']
 };
-const HCOL={plan:'I',review:'L',snap:'L',watch:'E',outlook:'J',daily:'H',signal:'L',fin:'S',inbox:'R'};
+const HCOL={plan:'I',review:'L',snap:'L',watch:'E',outlook:'K',daily:'I',signal:'L',fin:'S',inbox:'R',event:'Q'};
 const MKL={KR:'국장',US:'미장'};
 const MCCY={KR:'KRW',US:'USD'};
 const DEF_ACC={KR:['메리츠증권','메리츠 RIA','토스증권','토스 RIA'],US:['메리츠증권','토스증권']};
@@ -301,7 +309,7 @@ class AuthErr extends Error{constructor(m){super(m||'Google 로그인이 필요�
 
 /* ================= 상태 ================= */
 const S={cfg:Object.assign({},DEF,LS.get('sj.cfg',{})),token:null,tokenExp:0,email:'',D:null,locked:true,loading:false,err:'',needAuth:false,hiddenAt:0,lastAct:Date.now(),pin:'',pinMode:'unlock',pinFirst:'',pinMsg:'',busy:false,modal:null,
-  v:{tab:'home',stock:null,ccy:'KRW',hf:'all',al:'all',hs:'weight',cm:'all',cs:'recent',an:'mkt',as:'trend',per:'3M',tool:'avg',rbs:'KR',rbc:'1',mr:'KR',st:'KR',sm:'KR',fm:'KR',tk:'',cr:'3mo',sg:'sig',pz:'all',su:'all',ov:'ma',ok:'d'}};
+  v:{tab:'home',stock:null,ccy:'KRW',hf:'all',al:'all',hs:'weight',cm:'all',cs:'recent',an:'mkt',as:'trend',per:'3M',tool:'avg',rbs:'KR',rbc:'1',mr:'KR',st:'KR',sm:'KR',fm:'KR',tk:'',cr:'3mo',sg:'sig',pz:'all',su:'all',ov:'ma',ok:'d',calK:'all',calH:'hold',calI:'0',calM:'',calD:''}};
 const saveCfg=()=>LS.set('sj.cfg',S.cfg);
 const configured=()=>S.cfg.demo||(S.cfg.clientId&&S.cfg.mainId&&S.cfg.krId&&S.cfg.usId);
 const demoOpen=()=>!!S.cfg.demo;
@@ -490,10 +498,11 @@ function buildData(raw){
   const mktOf=t=>/^(KRX|KOSDAQ|KOSPI):/.test(t)||/^\d{6}$/.test(t)?'KR':'US';
   D.watch=(raw.watch||[]).map((r,i)=>{const t=str(r[0]).toUpperCase(),m=str(r[2]);return {row:i+2,ticker:t,name:str(r[1]),mkt:m==='국장'?'KR':m==='미장'?'US':mktOf(t),memo:str(r[3])}}).filter(w=>w.ticker);
   D.wByKey={};D.watch.forEach(w=>{const k='관심_'+w.ticker;D.wByKey[k]={key:k,watch:true,mkt:w.mkt,ccy:MCCY[w.mkt],ticker:w.ticker,name:w.name||w.ticker.split(':').pop(),tab:w.name||w.ticker,sheetId:'w'+w.row,qty:0,avg:0,price:0,trades:[],active:false,memo:w.memo}});
-  const ol=(raw.outlook||[]).map((r,i)=>({row:i+2,date:toSerial(r[0]),kind:str(r[1]),ticker:str(r[2]).toUpperCase(),name:str(r[3]),s:str(r[4]),m:str(r[5]),l:str(r[6]),sum:str(r[7]),ev:str(r[8]),src:str(r[9])})).filter(o=>o.date);
-  const ld=ol.length?Math.max(...ol.map(o=>o.date)):0;D.outlook={date:ld,rows:ol.filter(o=>o.date===ld)};
-  const dl=(raw.daily||[]).map((r,i)=>({row:i+2,date:toSerial(r[0]),kind:str(r[1]),ticker:str(r[2]).toUpperCase(),name:str(r[3]),v:str(r[4]),sum:str(r[5]),chk:str(r[6]),src:str(r[7])})).filter(o=>o.date);
-  const dd=dl.length?Math.max(...dl.map(o=>o.date)):0;D.daily={date:dd,rows:dl.filter(o=>o.date===dd)};
+  const ol=(raw.outlook||[]).map((r,i)=>({row:i+2,date:toSerial(r[0]),kind:str(r[1]),ticker:str(r[2]).toUpperCase(),name:str(r[3]),s:str(r[4]),m:str(r[5]),l:str(r[6]),sum:str(r[7]),ev:str(r[8]),src:str(r[9]),at:r[10]})).filter(o=>o.date);
+  const ld=ol.length?Math.max(...ol.map(o=>o.date)):0;D.outlook={date:ld,rows:ol.filter(o=>o.date===ld)};D.outlook.at=olAt(D.outlook.rows);
+  const dl=(raw.daily||[]).map((r,i)=>({row:i+2,date:toSerial(r[0]),kind:str(r[1]),ticker:str(r[2]).toUpperCase(),name:str(r[3]),v:str(r[4]),sum:str(r[5]),chk:str(r[6]),src:str(r[7]),at:r[8]})).filter(o=>o.date);
+  const dd=dl.length?Math.max(...dl.map(o=>o.date)):0;D.daily={date:dd,rows:dl.filter(o=>o.date===dd)};D.daily.at=olAt(D.daily.rows);
+  D.events=(raw.event||[]).map((r,i)=>evParse(r,i+2)).filter(o=>o.id&&o.day);
   D.signals=(raw.signal||[]).map((r,i)=>sigParse(r,i+2)).filter(o=>o.key&&o.date);D.sigKeys=new Set(D.signals.map(o=>o.key));
   D.inbox=(raw.inbox||[]).map((r,i)=>inboxParse(r,i+2)).filter(o=>o.key);
   finIndex(D,(raw.fin||[]).map((r,i)=>finParse(r,i+2)).filter(o=>o.key&&o.date&&o.ticker));
@@ -1183,7 +1192,7 @@ function vOutD(){const D=S.D,O=D.daily;if(!D.has.daily||!O.rows.length)return ol
      <div class="hz">${hzChip('오늘',OLV(o.v))}</div></div><div class="xs muted" style="margin-top:4px">오늘 ${esc(o.v||'-')}</div>
      ${o.sum?`<div class="sm" style="margin-top:6px;white-space:pre-wrap">${esc(o.sum)}</div>`:''}${o.chk?`<div class="xs muted" style="margin-top:6px;white-space:pre-wrap">체크포인트 · ${olLink(o.chk)}</div>`:''}${o.src?`<div class="xs faint" style="margin-top:4px;word-break:break-all">${olLink(o.src)}</div>`:''}</div>`;
   const mk=O.rows.filter(o=>o.kind==='시장'),rest=O.rows.filter(o=>o.kind!=='시장');
-  return `<section class="card"><h2>Claude 일간 전망 <span class="xs faint">${sToStr(O.date)} 작성</span></h2>${mk.map(card).join('')||'<div class="xs faint">시장 요약 없음</div>'}</section>
+  return `<section class="card"><h2>Claude 일간 전망 <span class="xs faint">${olWhen(O)} 작성</span></h2>${mk.map(card).join('')||'<div class="xs faint">시장 요약 없음</div>'}</section>
    ${rest.length?`<section class="card" style="padding-top:8px">${rest.map(card).join('')}</section>`:''}
    <p class="xs faint" style="margin:8px 2px">평일 아침 Claude가 간밤 미국 시장·뉴스·오늘 일정을 보고 작성합니다. 예측이 아니라 참고용 시나리오이며 매수·매도 권유가 아닙니다.</p>`}
 function vOutW(){const D=S.D,O=D.outlook;if(!D.has.outlook||!O.rows.length)return olEmpty('Claude 주간 전망','outlook','매주 월요일 아침','뉴스·실적 일정·시장 흐름을 보고 단기·중기·장기 전망');
@@ -1192,9 +1201,65 @@ function vOutW(){const D=S.D,O=D.outlook;if(!D.has.outlook||!O.rows.length)retur
      <div class="xs muted" style="margin-top:4px">단기 ${esc(o.s||'-')} · 중기 ${esc(o.m||'-')} · 장기 ${esc(o.l||'-')}</div>
      ${o.sum?`<div class="sm" style="margin-top:6px;white-space:pre-wrap">${esc(o.sum)}</div>`:''}${o.ev?`<div class="xs muted" style="margin-top:6px;white-space:pre-wrap">${olLink(o.ev)}</div>`:''}${o.src?`<div class="xs faint" style="margin-top:4px;word-break:break-all">${olLink(o.src)}</div>`:''}</div>`;
   const mk=O.rows.filter(o=>o.kind==='시장'),rest=O.rows.filter(o=>o.kind!=='시장');
-  return `<section class="card"><h2>Claude 주간 전망 <span class="xs faint">${sToStr(O.date)} 작성</span></h2>${mk.map(card).join('')}</section>
+  return `<section class="card"><h2>Claude 주간 전망 <span class="xs faint">${olWhen(O)} 작성</span></h2>${mk.map(card).join('')}</section>
    ${rest.length?`<section class="card" style="padding-top:8px">${rest.map(card).join('')}</section>`:''}
    <p class="xs faint" style="margin:8px 2px">매주 월요일 아침 Claude가 뉴스·실적 일정·시세를 보고 작성합니다. 예측이 아니라 참고용 시나리오이며 매수·매도 권유가 아닙니다.</p>`}
+
+/* ================= 분석: 주요일정 (App_주요일정) ================= */
+// 셀 값: 문자열 'YYYY-MM-DD HH:MM' 또는 시트가 날짜로 바꾼 일련번호(소수부 = 시각)
+const tsParts=v=>{if(typeof v==='number'&&v>0){const d=Math.floor(v),m=Math.round((v-d)*1440);return {day:d,hm:m?`${String(Math.floor(m/60)).padStart(2,'0')}:${String(m%60).padStart(2,'0')}`:''}}
+  const s=str(v),m=s.match(/(\d{1,2}):(\d{2})/);return {day:toSerial(s),hm:m?`${m[1].padStart(2,'0')}:${m[2]}`:''}};
+function olAt(rows){const a=rows.map(o=>tsParts(o.at)).filter(x=>x.day).sort((x,y)=>y.day-x.day||(y.hm>x.hm?1:-1));return a[0]||null}
+function olWhen(O){const a=O.at;if(!a||!a.hm)return sToStr(O.date);return a.day===O.date?`${sToStr(O.date)} ${a.hm}`:`${sToStr(O.date)} (${sToStr(a.day)} ${a.hm})`}
+function evParse(r,row){const t=tsParts(r[3]);return {row,id:str(r[0]),ver:str(r[1]),kind:str(r[2]),day:t.day,hm:t.hm,target:str(r[4]).toUpperCase(),name:str(r[5]),title:str(r[6]),imp:str(r[7]),st:str(r[8]),fc:str(r[9]),prev:str(r[10]),act:str(r[11]),verdict:str(r[12]),score:r[13]===''||r[13]==null?null:num(r[13]),sub:str(r[14]),src:str(r[15]),upd:r[16]}}
+const EVB=v=>/호재|상회/.test(v)?'g':/악재|하회/.test(v)?'b':/혼조/.test(v)?'m':'';
+function evShort(e){if(e.kind==='실적')return (e.name||e.target.split(':').pop()).slice(0,6);const t=e.title.replace(/\s*\([^)]*\)\s*$/,'');return t.slice(0,7)}
+function evList(){const D=S.D,k=S.v.calK||'all',h=S.v.calH||'hold',hi=S.v.calI==='1';
+  const held=new Set(D.hold.filter(x=>x.active).map(x=>x.ticker.toUpperCase()));
+  return (D.events||[]).filter(e=>(k==='all'||(k==='econ'?e.kind==='경제':e.kind==='실적'))&&(e.kind!=='실적'||h==='all'||held.has(e.target))&&(!hi||e.kind==='실적'||e.imp==='높음'))
+    .map(e=>Object.assign(e,{held:e.kind!=='실적'||held.has(e.target)}))}
+function evItem(e){const b=EVB(e.verdict);const right=e.st==='발표'?(e.verdict?`<span class="evb ${b}">${esc(e.verdict)}</span>`:'<span class="evb">발표</span>'):`<span class="evb p">${esc(e.st||'예정')}</span>`;
+  const val=e.kind==='실적'?(e.st==='발표'?`EPS ${esc(e.act||'-')} vs 예상 ${esc(e.fc||'-')}${e.score!=null?` (${e.score>0?'+':''}${fmtNum(e.score,2)}%)`:''}`:(e.fc?`컨센서스 EPS ${esc(e.fc)}`:''))
+    :(e.st==='발표'?`실제 ${esc(e.act||'-')} · 예상 ${esc(e.fc||'-')} · 이전 ${esc(e.prev||'-')}`:`예상 ${esc(e.fc||'-')} · 이전 ${esc(e.prev||'-')}`);
+  return `<button class="trow evr" data-act="evOpen" data-id="${esc(e.id)}"><div style="min-width:0"><div class="sm"><span class="evk ${e.kind==='실적'?'e':'c'}">${e.kind==='실적'?'실적':esc(e.target||'경제')}</span> ${e.imp==='높음'&&e.kind==='경제'?'<b class="evi">●</b> ':''}<b>${esc(e.kind==='실적'?(e.name||e.target):e.title)}</b>${e.held?'':' <i class="badge">보유 종료</i>'}</div>
+   <div class="xs faint">${e.hm?esc(e.hm)+' · ':''}${val}</div></div><div class="r">${right}</div></button>`}
+function vCal(){const D=S.D;
+  if(!D.has.event)return `<section class="card"><h2>주요일정</h2><div class="sm muted">평일 아침 전망 리포트 작업이 미국·한국 경제지표 일정·발표 결과와 보유 종목 실적 일정을 주식일지 파일의 ${APP.event} 시트에 기록합니다. 먼저 시트를 만드세요.</div><button class="btn sm pri" style="margin-top:12px" data-act="createSheets" data-busy>앱 시트 만들기</button></section>`;
+  const today=toSerial(todayStr()),td=new Date(EPOCH+today*864e5);
+  const ym=S.v.calM||`${td.getUTCFullYear()}-${String(td.getUTCMonth()+1).padStart(2,'0')}`;const [Y,M]=ym.split('-').map(Number);
+  const first=toSerial(`${Y}-${String(M).padStart(2,'0')}-01`),dim=new Date(Date.UTC(Y,M,0)).getUTCDate(),dow0=new Date(Date.UTC(Y,M-1,1)).getUTCDay();
+  const sel=S.v.calD?+S.v.calD:(today>=first&&today<first+dim?today:first);
+  const L=evList(),by={};L.forEach(e=>{(by[e.day]=by[e.day]||[]).push(e)});
+  Object.values(by).forEach(a=>a.sort((x,y)=>(x.hm||'99').localeCompare(y.hm||'99')||(x.kind==='실적'?-1:1)));
+  let cells='';for(let i=0;i<dow0;i++)cells+='<div class="cd x"></div>';
+  for(let d=0;d<dim;d++){const s=first+d,a=by[s]||[],er=a.filter(e=>e.kind==='실적'),ec=a.filter(e=>e.kind==='경제'),hi=ec.filter(e=>e.imp==='높음');
+    const tags=[...er.slice(0,2).map(e=>`<i class="ct e ${EVB(e.verdict)}">${esc(evShort(e))}</i>`),...hi.slice(0,er.length?1:2).map(e=>`<i class="ct c ${EVB(e.verdict)}">${esc(evShort(e))}</i>`)];
+    const more=a.length-tags.length;const wd=(dow0+d)%7;
+    cells+=`<button class="cd${s===today?' td':''}${s===sel?' on':''}${wd===0?' su':wd===6?' sa':''}" data-act="calDay" data-val="${s}"><b>${d+1}</b>${tags.join('')}${more>0?`<i class="cm">+${more}</i>`:''}</button>`}
+  const nav=m=>{const dt=new Date(Date.UTC(Y,M-1+m,1));return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth()+1).padStart(2,'0')}`};
+  const dayL=by[sel]||[];
+  const up=L.filter(e=>e.day>today&&e.day<=today+7&&e.st!=='발표'&&(e.kind==='실적'||e.imp==='높음')).sort((x,y)=>x.day-y.day||(x.hm||'').localeCompare(y.hm||''));
+  const lastUpd=(D.events||[]).map(e=>tsParts(e.upd)).filter(x=>x.day).sort((a,b)=>b.day-a.day||(b.hm>a.hm?1:-1))[0];
+  return `<div style="margin-top:12px">${chips('calK',[['all','전체'],['econ','경제지표'],['earn','실적']])}</div>
+   <div style="margin-top:8px">${chips('calH',[['hold','보유 중 종목'],['all','과거 보유 포함']])}</div>
+   <div style="margin-top:8px">${chips('calI',[['0','모든 지표'],['1','중요 지표만']])}</div>
+   <section class="card"><div class="row sb"><button class="btn sm" data-act="set" data-k="calM" data-val="${nav(-1)}" aria-label="이전 달">‹</button><h2 style="margin:0">${Y}년 ${M}월</h2><button class="btn sm" data-act="set" data-k="calM" data-val="${nav(1)}" aria-label="다음 달">›</button></div>
+    <div class="calg hd">${['일','월','화','수','목','금','토'].map(x=>`<div>${x}</div>`).join('')}</div><div class="calg">${cells}</div>
+    <div class="xs faint" style="margin-top:8px"><i class="ct e">실적</i> <i class="ct c">지표</i> 빨강 호재·상회, 파랑 악재·하회, 회색 혼조 · 시각은 한국 시간</div></section>
+   <section class="card"><h2>${sToStr(sel)} <span class="xs faint">${dayL.length}건</span></h2>${dayL.length?dayL.map(evItem).join(''):'<div class="empty">일정이 없습니다</div>'}</section>
+   ${up.length?`<section class="card"><h2>다가오는 7일 <span class="xs faint">실적 · 중요 지표</span></h2>${up.map(e=>`<div class="xs muted" style="margin-top:8px">${sToStr(e.day).slice(5)} ${esc(e.hm||'')}</div>${evItem(e)}`).join('')}</section>`:''}
+   <p class="xs faint" style="margin:8px 2px">경제지표: TradingView 경제 캘린더(미국·한국), 판정은 예상치 대비 서프라이즈와 지표별 가중치로 계산합니다(참고용). 실적: Nasdaq·차트 서버, 예상일은 바뀔 수 있습니다. ETF는 제외합니다. 보유를 끝낸 종목의 기록도 남습니다.${lastUpd?` 마지막 갱신 ${sToStr(lastUpd.day)} ${lastUpd.hm}`:''}</p>`}
+function evModal(id){const e=(S.D.events||[]).find(x=>x.id===id);if(!e)return;const b=EVB(e.verdict);
+  const hist=e.kind==='실적'?(S.D.events||[]).filter(x=>x.kind==='실적'&&x.target===e.target&&x.st==='발표'&&x.id!==e.id).sort((x,y)=>y.day-x.day).slice(0,6):[];
+  const kv=(k,v)=>v?`<div><span>${k}</span><b class="num">${esc(v)}</b></div>`:'';
+  openModal(`<h3>${esc(e.kind==='실적'?`${e.name||e.target} 실적 발표`:e.title)}</h3>
+   <div class="sm muted" style="margin:-4px 0 10px">${sToStr(e.day)}${e.hm?' '+esc(e.hm)+' (한국 시간)':''} · ${esc(e.kind)} · ${esc(e.target)} · 상태 ${esc(e.st)}${e.imp?` · 중요도 ${esc(e.imp)}`:''}</div>
+   ${e.verdict?`<div style="margin-bottom:10px"><span class="evb ${b}">${esc(e.verdict)}</span>${e.score!=null?` <span class="xs faint">${e.kind==='실적'?'서프라이즈':'점수'} ${e.score>0?'+':''}${fmtNum(e.score,2)}${e.kind==='실적'?'%':''}</span>`:''}</div>`:''}
+   <div class="metrics">${kv(e.kind==='실적'?'컨센서스 EPS':'예상',e.fc)}${kv(e.kind==='실적'?'전년 동기 EPS':'이전',e.prev)}${kv(e.kind==='실적'?'실제 EPS':'실제',e.act)}</div>
+   ${e.sub?`<div class="sm" style="margin-top:12px;white-space:pre-wrap">${esc(e.sub.split(' · ').join('\n'))}</div>`:''}
+   ${hist.length?`<div class="sect">지난 실적</div>${hist.map(h=>`<div class="row sb sm" style="margin-top:6px"><span>${sToStr(h.day)}</span><span class="num">EPS ${esc(h.act||'-')} vs ${esc(h.fc||'-')} <span class="evb ${EVB(h.verdict)}">${h.score!=null?(h.score>0?'+':'')+fmtNum(h.score,2)+'%':esc(h.verdict)}</span></span></div>`).join('')}`:''}
+   ${e.src?`<div class="xs faint" style="margin-top:12px;word-break:break-all">출처 ${olLink(e.src)}</div>`:''}
+   <div class="btns"><button class="btn" data-act="closeModal">닫기</button></div>`)}
 
 /* ================= 종목 상세: 전략 카드 ================= */
 function stratCard(h){if(!sgReady())return `<h2>전략 분석</h2><div class="sm muted">설정 → 기능 → 주가 차트 서버를 연결하면 지표·신호·재무를 볼 수 있습니다.</div>`;
@@ -1769,9 +1834,9 @@ function vCash(){
 
 /* ---------- 분석 ---------- */
 function vAnal(){
-  return `<div style="margin-top:12px">${seg('an',[['mkt','시장'],['out','전망'],['rev','회고']],'full')}</div>${S.v.an==='rev'?anRev():`<div id="anv">${vAnalBody()}</div>`}`;
+  return `<div style="margin-top:12px">${seg('an',[['mkt','시장'],['out','전망'],['cal','주요일정'],['rev','회고']],'full')}</div>${S.v.an==='rev'?anRev():`<div id="anv">${vAnalBody()}</div>`}`;
 }
-function vAnalBody(){if(S.v.an==='out')return vOut();return sgReady()?vMkt():vSgConnect()}
+function vAnalBody(){if(S.v.an==='out')return vOut();if(S.v.an==='cal')return vCal();return sgReady()?vMkt():vSgConnect()}
 /* ---------- 자산 ---------- */
 function vAsset(){
   return `<div style="margin-top:12px">${seg('as',[['trend','자산추이'],['real','실현손익'],['stat','매매통계'],['acct','내계좌']],'full')}</div>${({trend:anTrend,real:anReal,stat:anStat,acct:vCash}[S.v.as]||anTrend)()}`;
@@ -2125,7 +2190,7 @@ const A={
     t.textContent=el.dataset.msg;t.style.display='block';
     const x=e.clientX-b.left,y=e.clientY-b.top,w=t.offsetWidth,h=t.offsetHeight;
     t.style.transform=`translate(${Math.max(0,Math.min(x-w/2,b.width-w))}px,${y-h-8>=0?y-h-8:y+12}px)`},
-  set(el){S.v[el.dataset.k]=el.dataset.val;if(el.dataset.k==='rbs'||el.dataset.k==='rbc')S.rbw=S.rbw||null;render()},
+  set(el){S.v[el.dataset.k]=el.dataset.val;if(el.dataset.k==='calM')S.v.calD='';if(el.dataset.k==='rbs'||el.dataset.k==='rbc')S.rbw=S.rbw||null;render()},
   tab(el){const v=el.dataset.val;if(S.v.stock)S.v.stock=null;if(v!=='home'&&S.v.tab==='home')navPush({sjt:1});S.v.tab=v;render();window.scrollTo(0,0)},
   goHold(el){S.v.hf=el.dataset.val;navPush({sjt:1});S.v.tab='hold';render();window.scrollTo(0,0)},
   stock(el){S.v.stock=el.dataset.key;navPush({sjs:1});render();window.scrollTo(0,0)},
@@ -2211,6 +2276,8 @@ const A={
   async fxpReset(){if(await confirmBox('환전 우대 기본값','증권사별 환전 우대를 기본값(스프레드 1%, 메리츠 100%·2027년부터 95%, 토스 95%)으로 되돌릴까요?','되돌리기')){S.cfg.fxp={};saveCfg();render();toast('기본값으로 되돌렸습니다')}},
   async feeReset(){if(await confirmBox('수수료 기본값','계좌별 수수료를 기본값(토스·메리츠 요율)으로 되돌릴까요?','되돌리기')){S.cfg.fees={};saveCfg();render();toast('기본값으로 되돌렸습니다')}},
   rbReset(){S.rbw=null;render()},
+  calDay(el){S.v.calD=el.dataset.val;render()},
+  evOpen(el){evModal(el.dataset.id)},
   pxRange(el){S.v.cr=el.dataset.val;const h=curStock();if(h){pxPaint(h);pxEnsure(h)}},
   pxRetry(){const h=curStock();if(h)pxEnsure(h,true)},
   sigScan(){sgLogScan(true);sgRepaint()},
@@ -2308,12 +2375,26 @@ const Demo=(()=>{
     return [[d,'시장','','시장 전체','약강세','데모 리포트입니다. 간밤 미국 반도체주 강세로 국내 반도체 업종 출발이 우호적일 수 있습니다.','오늘: 국내 수출 잠정치 발표 · 원/달러 1,380원선','데모 데이터'],
       [d,'보유','KRX:900101','한빛반도체','약강세','미국 메모리 업체 실적 호조 영향. 20일선(약 7만 원) 지지 여부 확인.','지지 70,000 · 저항 74,000','데모 데이터'],
       [d,'보유','NASDAQ:NVDA','NVDA','중립','특별한 뉴스 없음. 직전 고점 부근 매물 소화 구간.','이번 주 신제품 발표 예정(데모)','데모 데이터'],
-      [d,'관심','NASDAQ:AMD','AMD','약약세','경쟁사 가격 인하 보도. 60일선 아래 약세 지속.','','데모 데이터']]}
+      [d,'관심','NASDAQ:AMD','AMD','약약세','경쟁사 가격 인하 보도. 60일선 아래 약세 지속.','','데모 데이터']].map(r=>[...r,sToStr(d)+' 07:26'])}
   function demoOutlook(){const t=toSerial(todayStr()),dow=new Date().getDay(),mon=t-((dow+6)%7);
     return [[mon,'시장','','시장 전체','중립','약강세','강세','데모 리포트입니다. 반도체 업황 회복 기대가 이어지지만 단기 급등 뒤 변동성이 커진 구간입니다.','이번 주: 미국 소비자물가 발표, 주요 반도체 기업 실적 발표','데모 데이터'],
       [mon,'보유','KRX:900101','한빛반도체','약강세','강세','강세','HBM 수요 확대로 이익 추정치가 오르는 중. 단기는 20일선 지지 여부 확인.','실적 발표 예정(데모)','데모 데이터'],
       [mon,'보유','NASDAQ:NVDA','NVDA','중립','약강세','강세','데이터센터 수요는 견조, 밸류에이션 부담으로 단기 등락 가능.','','데모 데이터'],
-      [mon,'관심','NASDAQ:AMD','AMD','약약세','중립','약강세','신제품 출시 전 관망 구간. 60일선 회복 여부가 관건.','','데모 데이터']]}
+      [mon,'관심','NASDAQ:AMD','AMD','약약세','중립','약강세','신제품 출시 전 관망 구간. 60일선 회복 여부가 관건.','','데모 데이터']].map(r=>[...r,sToStr(mon)+' 06:58'])}
+  function demoEvents(){const t=toSerial(todayStr()),D=k=>sToStr(t+k),up="'"+sToStr(t)+' 07:26';
+    const E=(id,kind,at,tg,nm,ti,imp,st,fc,pv,ac,vd,sc,sub,src)=>[id,'v'+id.length,kind,at,tg,nm,ti,imp,st,fc,pv,ac,vd,sc,sub,src,up];
+    return [E('TV-d1','경제',D(-3)+' 22:30','미국','','비농업 고용 (Non Farm Payrolls)','높음','발표','65','60','165','혼조',0.3,'기간 데모 · 예상 상회 (발표 165 vs 예상 65) — 성장 호조이나 금리인하 지연 가능(매파)','https://www.bls.gov/'),
+      E('TV-d2','경제',D(-3)+' 22:30','미국','','실업률 (Unemployment Rate)','높음','발표','4.2%','4.2%','4.1%','혼조',0.2,'기간 데모 · 예상 하회','https://www.bls.gov/'),
+      E('TV-d3','경제',D(0)+' 22:30','미국','','CPI 전년비 (Inflation Rate YoY)','높음','예정','3.9%','3.7%','','','','기간 데모 · 예상치 3.9%','https://www.bls.gov/'),
+      E('TV-d4','경제',D(0)+' 22:30','미국','','근원 CPI 전월비 (Core Inflation Rate MoM)','높음','예정','0.2%','0.3%','','','','기간 데모','https://www.bls.gov/'),
+      E('TV-d5','경제',D(-1)+' 08:00','한국','','수출 전년비 (Exports YoY)','보통','발표','9.2%','8.3%','9.4%','약한 호재',0.6,'기간 데모 · 예상 상회 (발표 9.4 vs 예상 9.2)','https://www.motie.go.kr/'),
+      E('TV-d6','경제',D(3)+' 22:30','미국','','PPI 전월비 (PPI MoM)','높음','예정','0.4%','1.3%','','','','기간 데모',''),
+      E('TV-d7','경제',D(16)+' 10:00','한국','','기준금리 결정 (Interest Rate Decision)','높음','예정','','3%','','','','한국은행 금융통화위원회(데모)',''),
+      E('ER-NASDAQ:NVDA-NEXT','실적',D(7),'NASDAQ:NVDA','NVDA','NVDA 실적 발표','높음','예정','2.49','1.24','','','','데모 분기 · 장 마감 후 · 전년 동기 EPS 1.24 · Worker 일정 일치 · 출처 Nasdaq','https://www.nasdaq.com/market-activity/stocks/nvda/earnings'),
+      E('ER-NASDAQ:NVDA-'+D(-76),'실적',D(-76),'NASDAQ:NVDA','NVDA','NVDA 실적 발표','높음','발표','2.09','','2.22','예상 상회',6.22,'데모 분기 · 출처 Nasdaq','https://www.nasdaq.com/market-activity/stocks/nvda/earnings'),
+      E('ER-NASDAQ:NVDA-'+D(-167),'실적',D(-167),'NASDAQ:NVDA','NVDA','NVDA 실적 발표','높음','발표','1.7','','1.87','예상 상회',10,'데모 분기 · 출처 Nasdaq','https://www.nasdaq.com/market-activity/stocks/nvda/earnings'),
+      E('ER-KRX:900101-NEXT','실적',D(12),'KRX:900101','한빛반도체','한빛반도체 실적 발표','높음','예상','','','','','','출처 Worker /fund · 단일 출처',''),
+      E('ER-NASDAQ:AAPL-'+D(-12),'실적',D(-12),'NASDAQ:AAPL','AAPL','AAPL 실적 발표','높음','발표','1.6','','1.55','예상 하회',-3.1,'데모 분기 · 출처 Nasdaq','https://www.nasdaq.com/market-activity/stocks/aapl/earnings')]}
   function demoInbox(){const d=k=>sToStr(toSerial(todayStr())-k),at="'"+nowStr();
     return [['MZ|TR|demo1',at,'메리츠증권','메리츠증권','매수',d(2),'NASDAQ:AAPL','애플',3,229.85,0,'',689.55,'','USD','대기','','01|demo|해외주식매수|'],
       ['MZ|TR|demo2',at,'메리츠증권','메리츠증권','입금',d(2),'','',0,0,0,1000000,'','','KRW','대기','','30|demo|이체입금|1'],
@@ -2331,7 +2412,8 @@ const Demo=(()=>{
       {id:109,title:APP.signal,cells:[HDR.signal]},
       {id:110,title:APP.daily,cells:[HDR.daily,...demoDaily()]},
       {id:111,title:APP.fin,cells:[HDR.fin,...demoFin()]},
-      {id:112,title:APP.inbox,cells:[HDR.inbox,...demoInbox()]}]}};
+      {id:112,title:APP.inbox,cells:[HDR.inbox,...demoInbox()]},
+      {id:113,title:APP.event,cells:[HDR.event,...demoEvents()]}]}};
     sheet('main','현금투자').flows=openFlows();
     // 자산추이 시드
     const s=summary();const today=toSerial(todayStr());let tot=s.TOT.total,pr=s.TOT.principal;const rows=[];let seed=7;const rnd=()=>{seed=(seed*16807)%2147483647;return seed/2147483647};

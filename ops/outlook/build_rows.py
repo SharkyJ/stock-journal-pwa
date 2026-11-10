@@ -5,7 +5,9 @@ LLM 출력(analysis.json)을 검사하고, 통과하면 시트 헤더 순서의 
 
 사용:
   python3 build_rows.py --input work/input.json --market work/market.json --news work/news.json \
+      --calendar work/calendar.json --events work/events.json \
       --extra work/extra_sources.json --analysis work/analysis.json --out work/rows.json [--sheet 시트명]
+경제 캘린더(C..)·종목 이벤트(E..) ID 도 nums 로 인용할 수 있다. 마지막 열 '작성시각'(KST)은 코드가 채운다.
 종료 코드: 0 통과, 1 analysis 재작성 필요(오류 목록 출력), 2 중단(입력 파일 오류)
 """
 import argparse
@@ -95,9 +97,12 @@ def sentences(text):
 
 
 class Ctx:
-    def __init__(self, inp, market, news, extra, cfg):
+    def __init__(self, inp, market, news, extra, cfg, cal=None, events=None):
         self.inp, self.market, self.cfg = inp, market, cfg
         self.items = dict(market["items"])
+        for src in (cal, events):
+            for k, v in ((src or {}).get("items") or {}).items():
+                self.items[k] = {kk: vv for kk, vv in v.items() if kk not in ("status", "score", "days")}
         self.src = {}
         for o in news.get("items", []):
             self.src[o["id"]] = {"url": o["url"], "nums": [x[0] for x in numbers_in(o["title"])],
@@ -178,9 +183,10 @@ def check_row(key, r, ctx, text_fields, value_fields):
     return errs
 
 
-def build(inp, market, news, extra, analysis, cfg, sheet=None):
+def build(inp, market, news, extra, analysis, cfg, sheet=None, cal=None, events=None, now=None):
     errs = check_extra(extra)
-    ctx = Ctx(inp, market, news, extra, cfg)
+    ctx = Ctx(inp, market, news, extra, cfg, cal, events)
+    ts = (now or C.now_kst()).strftime("%Y-%m-%d %H:%M")
     mode = inp["mode"]
     rows_in = {}
     for r in analysis.get("rows", []):
@@ -213,15 +219,16 @@ def build(inp, market, news, extra, analysis, cfg, sheet=None):
 
     def line(kind, ticker, name, r):
         if mode == "daily":
-            return [d, kind, ticker, name, r["outlook"], r["summary"], r.get("checkpoint", ""), urls(r)]
-        return [d, kind, ticker, name, r["s"], r["m"], r["l"], r["summary"], r.get("event", ""), urls(r)]
+            return [d, kind, ticker, name, r["outlook"], r["summary"], r.get("checkpoint", ""), urls(r), ts]
+        return [d, kind, ticker, name, r["s"], r["m"], r["l"], r["summary"], r.get("event", ""), urls(r), ts]
 
     rows = [line("시장", "", "시장 전체", rows_in["market"])]
     for kind, lst in (("보유", inp["holdings"]), ("관심", inp["watch"])):
         for h in lst:
             rows.append(line(kind, h["ticker"], h["name"], rows_in[h["ticker"]]))
     cut = (date.fromisoformat(d) - timedelta(days=sh["keep_days"])).isoformat()
-    return {"sheet": sheet or sh["name"], "header": sh["header"], "date": d, "delete_before": cut, "rows": rows}, []
+    return {"sheet": sheet or sh["name"], "header": sh["header"], "date": d, "delete_before": cut, "written_at": ts,
+            "rows": rows}, []
 
 
 def main():
@@ -229,6 +236,8 @@ def main():
     for f in ("input", "market", "news", "analysis", "out"):
         ap.add_argument("--" + f, required=True)
     ap.add_argument("--extra", help="S3 보완 출처 (없으면 생략)")
+    ap.add_argument("--calendar", help="경제 캘린더 calendar.json (없으면 생략)")
+    ap.add_argument("--events", help="종목 이벤트 events.json (없으면 생략)")
     ap.add_argument("--sheet", help="기록할 시트 이름 (병행 운영 시 _v2)")
     a = ap.parse_args()
     cfg = C.load_config()
@@ -237,6 +246,8 @@ def main():
         market, news = C.load_json(a.market), C.load_json(a.news)
         extra = C.load_json(a.extra) if a.extra else {"items": []}
         analysis = C.load_json(a.analysis)
+        cal = C.load_json(a.calendar) if a.calendar else None
+        events = C.load_json(a.events) if a.events else None
     except (OSError, json.JSONDecodeError) as e:
         C.fail(f"입력 파일을 읽지 못함: {e}", C.ABORT)
     if ierr:
@@ -244,7 +255,7 @@ def main():
     if market.get("date") != inp["date"] or news.get("date") != inp["date"]:
         C.fail("market/news 의 date 가 input 과 다름 (S1, S2 를 다시 실행)", C.ABORT)
     try:
-        res, errs = build(inp, market, news, extra, analysis, cfg, a.sheet)
+        res, errs = build(inp, market, news, extra, analysis, cfg, a.sheet, cal, events)
     except (KeyError, TypeError, ValueError) as e:
         errs = [f"analysis.json 구조 오류: {e}"]
     if errs:
