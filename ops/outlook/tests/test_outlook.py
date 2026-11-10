@@ -126,6 +126,30 @@ class TestNews(unittest.TestCase):
         self.assertNotIn("NYSEARCA:SOXL", scopes)
         self.assertIn(("NASDAQ:MU", "MU stock", "en", 3), q)
 
+    def test_yahoo_queries(self):
+        y = N.yahoo_queries(inp_daily(), CFG)
+        self.assertIn(("NASDAQ:MU", "MU", 2), y)
+        self.assertTrue(all(":" not in s and not s.endswith((".KS", ".KQ")) for _, s, _ in y))
+        self.assertNotIn("NYSEARCA:SOXL", [x[0] for x in y])
+        off = json.loads(json.dumps(CFG)); off["news"]["yahoo_rss"] = False
+        self.assertEqual(N.yahoo_queries(inp_daily(), off), [])
+
+    def test_yahoo_parse_default_source(self):
+        xml = (b'<rss><channel><item><title>Micron rises</title>'
+               b'<link>https://finance.yahoo.com/a.html?.tsrc=rss</link>'
+               b'<pubDate>Tue, 10 Nov 2026 02:45:36 +0000</pubDate></item></channel></rss>')
+        it = N.parse_rss(xml, "Yahoo Finance")[0]
+        self.assertEqual((it["source"], it["title"]), ("Yahoo Finance", "Micron rises"))
+
+    def test_collect_yahoo_fail_open(self):
+        def fetch(url):
+            if "yahoo" in url:
+                raise OSError("HTTP 403")
+            return (HERE / "fixtures" / "rss_sample.xml").read_bytes()
+        res = N.collect(inp_daily(), CFG, fetch=fetch, now=datetime(2026, 11, 9, 18, 0, tzinfo=C.KST))
+        self.assertTrue(any("yahoo" in e for e in res["errors"]))
+        self.assertTrue(res["items"])
+
 
 class TestBuild(unittest.TestCase):
     def build(self, a, extra=None):
