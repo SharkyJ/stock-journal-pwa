@@ -210,6 +210,7 @@ def main():
     a = ap.parse_args()
     cfg = C.load_config()
     inp, errs = C.normalize_input(C.load_json(a.input))
+    errs += C.date_errors(inp)
     if errs:
         C.fail("input.json 오류: " + "; ".join(errs))
     res = collect(inp, cfg, a.base)

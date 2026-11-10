@@ -26,13 +26,14 @@ description: 주식일지 일간 전망 리포트를 작성해 Google Sheets에 
 `ops/outlook/work/input.json` (폴더가 없으면 Write가 만든다):
 
 ```json
-{"date": "2026-11-10", "mode": "daily",
+{"date": "<오늘 KST YYYY-MM-DD>", "mode": "daily",
  "holdings": [{"ticker": "KRX:005930", "name": "삼성전자"}], "watch": [{"ticker": "NASDAQ:MU", "name": "마이크론"}],
  "signals": [{"date": "2026-11-07", "ticker": "KRX:005930", "strategy": "추세추종", "signal": "매도·경계"}],
  "weekly": [{"ticker": "", "name": "시장 전체", "s": "중립", "m": "약강세", "l": "강세"}],
  "fin": [{"date": "2026-10-08", "ticker": "KRX:005930", "f0end": "2026-12-31", "f0eps": 40000, "f1end": "2027-12-31", "f1eps": 52000, "target": 400000}]}
 ```
 
+`date`는 실행 시점의 오늘 날짜(Asia/Seoul, `TZ=Asia/Seoul date +%F`)다. 예시 날짜를 복사하지 않는다. 스크립트가 오늘과 다르면 거부한다.
 보유 수량·금액은 넣지 않는다. 날짜는 `YYYY-MM-DD` 문자열, 숫자는 숫자.
 
 ## 3. 수집 — 한 턴

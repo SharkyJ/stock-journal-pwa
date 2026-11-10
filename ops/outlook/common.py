@@ -1,5 +1,6 @@
 """전망 파이프라인 공용 유틸. 표준 라이브러리만 사용한다."""
 import json
+import os
 import re
 import sys
 import time
@@ -73,6 +74,13 @@ def ysym(ticker, market):
     if market == "KR":
         return code + (".KQ" if ex == "KOSDAQ" else ".KS") if re.fullmatch(r"[0-9A-Z]{6}", code) else ""
     return code.replace(".", "-") if re.fullmatch(r"[A-Z0-9][A-Z0-9.\-]{0,11}", code) else ""
+
+
+def date_errors(inp, today=None):
+    """input.json 의 date 가 오늘(Asia/Seoul)인지 확인한다. OUTLOOK_DATE 환경변수로 의도적 재작성 날짜를 지정할 수 있다."""
+    want = os.environ.get("OUTLOOK_DATE") or today or now_kst().date().isoformat()
+    got = str(inp.get("date", ""))
+    return [] if got == want else [f"date 는 오늘(KST) {want} 이어야 한다 (입력: {got})"]
 
 
 def normalize_input(inp):
