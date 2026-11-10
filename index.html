@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-lVgYfosqinsp1PehtTRhcX7dRVMD3hCAptIDOl/vPCw=' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; connect-src https://sheets.googleapis.com https://www.googleapis.com https://oauth2.googleapis.com https://accounts.google.com/gsi/ https://*.workers.dev https://script.google.com https://script.googleusercontent.com; frame-src https://accounts.google.com/gsi/; img-src 'self' data:; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-MZnbbkPpBnUFKzWeQ1v1rd3NfnE66b5WbyXM/HCzol0=' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; connect-src https://sheets.googleapis.com https://www.googleapis.com https://oauth2.googleapis.com https://accounts.google.com/gsi/ https://*.workers.dev https://script.google.com https://script.googleusercontent.com; frame-src https://accounts.google.com/gsi/; img-src 'self' data:; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
 <meta name="robots" content="noindex,nofollow">
 <meta name="theme-color" content="#0b0f17">
@@ -57,6 +57,7 @@ header.top h1 small{font-size:12px;font-weight:500;color:var(--tx3);white-space:
 .seg button{padding:5px 11px;border-radius:8px;font-size:13px;color:var(--tx2);font-weight:600;white-space:nowrap}
 .seg button.on{background:var(--card);color:var(--tx);box-shadow:0 1px 3px rgba(0,0,0,.18)}
 .seg.full{display:flex}.seg.full button{flex:1}
+@keyframes swl{from{opacity:.4;transform:translateX(24px)}to{opacity:1;transform:none}}@keyframes swr{from{opacity:.4;transform:translateX(-24px)}to{opacity:1;transform:none}}html,body{overscroll-behavior-x:none}#root.sw-l{animation:swl .18s ease-out}#root.sw-r{animation:swr .18s ease-out}@media (prefers-reduced-motion:reduce){#root.sw-l,#root.sw-r{animation:none}}
 .chips{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding-bottom:2px}.chips::-webkit-scrollbar{display:none}
 .chip{border:1px solid var(--line);border-radius:999px;padding:5px 11px;font-size:13px;color:var(--tx2);white-space:nowrap}
 .chip.on{background:var(--acs);border-color:transparent;color:var(--ac);font-weight:650}
@@ -236,7 +237,7 @@ code{background:var(--bg2);padding:1px 5px;border-radius:5px;font-size:12.5px}
 <script>
 'use strict';
 /* ================= 상수 / 유틸 ================= */
-const VERSION='1.11.0';
+const VERSION='1.11.1';
 const SH='https://sheets.googleapis.com/v4/spreadsheets';
 const SHEETS_SCOPE='https://www.googleapis.com/auth/spreadsheets';
 const SCOPES=SHEETS_SCOPE+' openid email';
@@ -889,6 +890,17 @@ document.addEventListener('pointermove',pxMove,{passive:true});
 document.addEventListener('pointerdown',pxMove,{passive:true});
 function chartTipHide(el){const t=$('.tip',el),ln=$('line.cur',el);if(t)t.style.display='none';if(ln)ln.style.display='none'}
 document.addEventListener('pointerdown',e=>{$$('.chart').forEach(el=>{if(!el.contains(e.target))chartTipHide(el)})},{passive:true});
+/* 화면 좌우 스와이프로 현재 메뉴의 상위 탭(첫 번째 .seg.full) 전환 */
+(()=>{let s0=null;const SKIP='input,textarea,select,.chart,.chips,.scrollx,svg,canvas,[data-noswipe]';
+  const hScroll=el=>{for(;el&&el!==document.body;el=el.parentElement){const cs=getComputedStyle(el);if(/(auto|scroll)/.test(cs.overflowX)&&el.scrollWidth>el.clientWidth+2)return true}return false};
+  document.addEventListener('touchstart',e=>{if(e.touches.length!==1||S.modal){s0=null;return}const tg=e.target;
+    if(!tg.closest('#root')||tg.closest(SKIP)||hScroll(tg)){s0=null;return}const p=e.touches[0];s0={x:p.clientX,y:p.clientY,t:Date.now()}},{passive:true});
+  document.addEventListener('touchend',e=>{if(!s0)return;const p=e.changedTouches[0],dx=p.clientX-s0.x,dy=p.clientY-s0.y,dt=Date.now()-s0.t;s0=null;
+    if(dt>700||Math.abs(dx)<60||Math.abs(dy)>Math.abs(dx)*0.6||S.modal)return;
+    const sg=$('#root .seg.full');if(!sg)return;const bs=[...sg.querySelectorAll('button[data-act=set]')],i=bs.findIndex(b=>b.classList.contains('on'));
+    const j=i+(dx<0?1:-1);if(i<0||j<0||j>=bs.length)return;S.v[bs[j].dataset.k]=bs[j].dataset.val;if(bs[j].dataset.k==='calM')S.v.calD='';
+    render();const r=$('#root');r.classList.toggle('sw-l',false);r.classList.toggle('sw-r',false);void r.offsetWidth;r.classList.toggle(dx<0?'sw-l':'sw-r',true)},{passive:true});
+  document.addEventListener('touchcancel',()=>{s0=null},{passive:true})})();
 document.addEventListener('pointerout',e=>{if(e.pointerType!=='mouse'||!e.target.closest)return;const el=e.target.closest('.chart');if(el&&!el.contains(e.relatedTarget))chartTipHide(el)},{passive:true});
 setInterval(()=>{if(document.hidden||S.locked||!S.D)return;sgAuto();const h=curStock();if(h)pxEnsure(h)},15e3);
 function chartUrlForm(){
