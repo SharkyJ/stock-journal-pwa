@@ -1,6 +1,7 @@
 """S2 뉴스 수집 (준결정적).
 
-Google News RSS 에서 시장·종목 기사를 모아 중복을 없애고 ID(N1..)를 붙인다.
+Google News RSS(시장·종목)와 Yahoo Finance 종목 헤드라인 RSS(미국 종목,
+config news.yahoo_rss 로 끔)에서 기사를 모아 중복을 없애고 ID(N1..)를 붙인다.
 LLM 은 기사 ID 만 인용하며, URL 은 이 파일의 결과에서 코드가 채운다.
 Google News RSS 는 개인·비상업 용도로만 쓸 수 있다(피드 저작권 고지).
 
@@ -28,11 +29,18 @@ def rss_url(q, lang, hours):
         {"q": f"{q} when:{when}", "hl": hl, "gl": gl, "ceid": ceid})
 
 
+YAHOO_RSS = "https://feeds.finance.yahoo.com/rss/2.0/headline?"
+
+
+def yahoo_url(sym):
+    return YAHOO_RSS + urllib.parse.urlencode({"s": sym, "region": "US", "lang": "en-US"})
+
+
 def norm_title(t):
     return re.sub(r"[\W_]+", "", t).lower()
 
 
-def parse_rss(xml_bytes):
+def parse_rss(xml_bytes, default_source=""):
     """RSS → [{title, source, url, published}] (published 는 KST ISO)."""
     root = ET.fromstring(xml_bytes)
     out = []
@@ -48,6 +56,7 @@ def parse_rss(xml_bytes):
         except (TypeError, ValueError):
             dt = None
         url = (it.findtext("link") or "").strip()
+        src = src or default_source
         if title and url.startswith("http"):
             out.append({"title": title, "source": src, "url": url, "published": dt})
     return out
@@ -84,15 +93,33 @@ def queries(inp, cfg):
     return q
 
 
+def yahoo_queries(inp, cfg):
+    """미국 종목(레버리지 제외) → [(scope, yahoo 심볼, limit)]."""
+    if not cfg["news"].get("yahoo_rss", False):
+        return []
+    out = []
+    for kind in ("holdings", "watch"):
+        for h in inp[kind]:
+            if h["market"] != "US" or h["ticker"] in cfg["underlying"]:
+                continue
+            sym = C.ysym(h["ticker"], "US")
+            if sym:
+                out.append((h["ticker"], sym, cfg["news"].get("yahoo_max", 2)))
+    return out
+
+
 def collect(inp, cfg, fetch=None, now=None):
     now = now or C.now_kst()
     hours = cfg["news"]["window_hours"][inp["mode"]]
     fetch = fetch or (lambda url: C.http_get(url, cfg, accept="application/rss+xml"))
     seen_urls, seen_titles, items, errors = set(), set(), [], []
     n = 0
-    for scope, q, lang, limit in queries(inp, cfg):
+    jobs = [(scope, q, limit, rss_url(q, lang, hours), "") for scope, q, lang, limit in queries(inp, cfg)]
+    jobs += [(scope, f"yahoo {sym}", limit, yahoo_url(sym), "Yahoo Finance")
+             for scope, sym, limit in yahoo_queries(inp, cfg)]
+    for scope, q, limit, url, dsrc in jobs:
         try:
-            got = parse_rss(fetch(rss_url(q, lang, hours)))
+            got = parse_rss(fetch(url), dsrc)
         except Exception as e:  # noqa: BLE001
             errors.append(f"{scope} '{q}': {e}")
             continue

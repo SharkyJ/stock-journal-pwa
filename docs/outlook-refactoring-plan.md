@@ -30,7 +30,7 @@
 | 뉴스 렉시콘 감성(가중치·부정어 처리) | 채택(제한) | 점수는 **정렬·선별과 사전 태그**에만 쓴다. 최종 판단은 LLM이 하며, 본문에 점수를 수치로 인용하지 않는다 |
 | 토픽·티커 태그, 관련성 판정 | 채택 | 기사 선별과 종목 매칭 정확도 향상 |
 | `min(event, news, calendar)` 예산 배수, 하드 차단 구간 | 제외 | 매매 기능이 없다 |
-| Yahoo Finance 헤드라인 RSS | 보류 | 이 세션에서 403. 전용 환경에서 확인 후 결정 |
+| Yahoo Finance 헤드라인 RSS | 채택 | 2026-11-10 재시도 200(20건). 미국 종목당 2건, `news.yahoo_rss`로 끔. 실패 시 fail-open |
 | 한글화(단어 치환·템플릿 요약) | 제외 | LLM이 한국어로 작성한다 |
 
 공개 엔드포인트 응답 확인(2026-11-10, 이 세션 기준):
@@ -40,7 +40,7 @@
 | Fed `press_monetary.xml` | 200, 15건 | 정상 |
 | TradingView 캘린더 | 200, JSON | 정상. 비공식이라 스펙 변경 가능 |
 | Nasdaq `earnings-date` | 200 | **응답 형식이 참고 문서와 다르다.** `data.reportText`에 "estimated to report earnings on 12/16/2026"과 컨센서스 EPS 문장이 들어 있다. 문서의 `announcement` 문자열 정규식은 쓸 수 없으므로 `reportText` 기준으로 파서를 새로 쓴다 |
-| Yahoo 종목 RSS | 403 | 보류 사유 |
+| Yahoo 종목 RSS | 200 (2026-11-10 재시도) | UA 없으면 404, 커스텀 UA는 정상 |
 
 전용 환경 `stock-journal-outlook`의 허용 호스트는 현재 `sj-chart.blueinwhite.workers.dev`, `news.google.com`뿐이다. 새 출처는 환경 호스트 추가가 선행돼야 한다(3단계 R0).
 
@@ -93,7 +93,7 @@
 
 | 단계 | 내용 | 산출물 | 완료 기준 |
 |---|---|---|---|
-| R0 | 환경 준비: 전용 환경 `stock-journal-outlook`에 허용 호스트 추가 후 3개 출처 실접속 확인 | 호스트 추가 요청(SJ 승인 필요): `www.federalreserve.gov`, `economic-calendar.tradingview.com`, `api.nasdaq.com` | 예약 환경에서 3개 모두 200 |
+| R0 | 환경 준비: 전용 환경 `stock-journal-outlook`에 허용 호스트 추가 후 3개 출처 실접속 확인 | 호스트 추가 요청(SJ 승인 필요): `www.federalreserve.gov`, `economic-calendar.tradingview.com`, `api.nasdaq.com`, `feeds.finance.yahoo.com` (SJ 승인 2026-11-10) | 예약 환경에서 3개 모두 200 |
 | R1 | 캘린더: `collect_calendar.py`, `judgeBias` 이식, 요약 절, 테스트 | 코드, fixture, 단위 테스트 | 11월 실데이터로 발표·예정 분류가 TradingView 화면과 일치 |
 | R2 | 뉴스: Fed RSS, 쿼리 보강, `news_score.py`, 요약 표기, 테스트 | 코드, 렉시콘 `config.json` | 부정어 케이스, 중복, 점수 임계 테스트 통과. 샘플 일자 뉴스 선별 결과 수동 점검 |
 | R3 | 이벤트: `collect_events.py`, `reportText` 파서, `/fund` 교차 검증, 근접도 | 코드, fixture(Nasdaq 응답) | 보유 미국 종목 전수 실적일 비교 결과 정리 |

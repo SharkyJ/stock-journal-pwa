@@ -34,6 +34,8 @@
     ],
     "market_max": 5,
     "ticker_max": 3,
+    "yahoo_rss": true,
+    "yahoo_max": 2,
     "window_hours": {"daily": 24, "weekly": 336}
   },
   "outlook_values": ["강세", "약강세", "중립", "약약세", "약세"],
