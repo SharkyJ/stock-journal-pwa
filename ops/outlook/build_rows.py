@@ -244,6 +244,7 @@ def main():
     cfg = C.load_config()
     try:
         inp, ierr = C.normalize_input(C.load_json(a.input))
+        ierr += C.date_errors(inp)
         market, news = C.load_json(a.market), C.load_json(a.news)
         extra = C.load_json(a.extra) if a.extra else {"items": []}
         analysis = C.load_json(a.analysis)

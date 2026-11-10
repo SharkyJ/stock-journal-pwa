@@ -3,6 +3,7 @@
 실행: cd ops/outlook && python3 -m unittest discover -s tests -v
 """
 import json
+import os
 import sys
 import unittest
 from datetime import datetime
@@ -79,6 +80,17 @@ class TestCommon(unittest.TestCase):
         self.assertEqual([h["ticker"] for h in i["holdings"]], ["KRX:005930", "NYSEARCA:SOXL"])
         self.assertEqual([h["ticker"] for h in i["watch"]], ["NASDAQ:MU"])
         self.assertEqual(i["holdings"][0]["market"], "KR")
+
+    def test_date_must_be_today(self):
+        today = C.now_kst().date().isoformat()
+        os.environ.pop("OUTLOOK_DATE", None)
+        self.assertEqual(C.date_errors({"date": today}), [])
+        self.assertTrue(C.date_errors({"date": "2000-01-01"}))
+        os.environ["OUTLOOK_DATE"] = "2000-01-01"
+        try:
+            self.assertEqual(C.date_errors({"date": "2000-01-01"}), [])
+        finally:
+            del os.environ["OUTLOOK_DATE"]
 
     def test_normalize_errors(self):
         _, e = C.normalize_input({"date": "11/09", "mode": "x", "holdings": [{"ticker": "KRX:1"}]})
