@@ -276,7 +276,7 @@ class TestPlanVerify(unittest.TestCase):
         self.assertEqual([x["deleteDimension"]["range"]["startIndex"] for x in p["requests"]], [4, 1])
         self.assertEqual([x["deleteDimension"]["range"]["endIndex"] for x in p["requests"]], [6, 3])
         self.assertEqual(p["expect"]["start"], 3)  # 헤더 + 10-20 한 행 남음
-        self.assertEqual(p["readback"], ["'App_일간전망'!A1:E2", f"'App_일간전망'!A3:E{2 + len(r['rows'])}"])
+        self.assertEqual(p["readback"], ["'App_일간전망'!A1:I2", f"'App_일간전망'!A3:I{2 + len(r['rows'])}"])
         self.assertIsNone(p["header_update"])
         head = {"range": "'App_일간전망'!A1:Z1", "values": [r["header"][:8]]}
         self.assertTrue(W.plan(r, 77, self.cola(dates), head)["header_update"])  # 작성시각 열 추가
@@ -292,9 +292,10 @@ class TestPlanVerify(unittest.TestCase):
         vals = [list(x) for x in p["append"]["values"]]
         app = {"updates": {"updatedRange": f"'{p['sheet']}'!A{p['expect']['start']}:I{p['expect']['end']}",
                            "updatedRows": p["expect"]["rows"]}}
-        rb1 = {"range": p["readback"][0], "values": [p["header"][:5], ["2026-10-20", "시장", "", "시장 전체", "중립"]]}
-        body = [x[:5] for x in vals]
+        rb1 = {"range": p["readback"][0], "values": [p["header"], ["2026-10-20", "시장", "", "시장 전체", "중립"]]}
+        body = [list(x) for x in vals]
         body[0][0] = "2026. 11. 9"
+        body[0][-1] = "2026. 11. 9 오전 7:25:00"  # 시트가 날짜·시각으로 바꿔 보여준 경우
         if mutate:
             mutate(body)
         rb2 = {"range": p["readback"][1], "values": body}
@@ -401,6 +402,105 @@ class TestNewsScore(unittest.TestCase):
         self.assertEqual(it["hint"], "호재")
 
 
+class TestNormCell(unittest.TestCase):
+    def test_formats(self):
+        self.assertEqual(V.norm_cell("4.20%"), V.norm_cell("'4.2%"))
+        self.assertEqual(V.norm_cell("1,234.50"), V.norm_cell("1234.5"))
+        self.assertEqual(V.norm_cell("2026. 11. 10 오후 5:27:00"), V.norm_cell("2026-11-10 17:27"))
+        self.assertNotEqual(V.norm_cell("4.2%"), V.norm_cell("4.2"))
+
+
+class TestGuardHook(unittest.TestCase):
+    """훅(.claude/hooks/sheets_guard.py)과 기록 기반 plan_write·verify_written 흐름."""
+
+    def setUp(self):
+        import importlib.util
+        import tempfile
+        import sheetlog as L
+        self.L = L
+        self.tmp = tempfile.TemporaryDirectory()
+        w = Path(self.tmp.name)
+        self.saved = (L.WORK, L.GUARD, L.LOG)
+        L.WORK, L.GUARD, L.LOG = w, w / "guard.json", w / "sheet_log.jsonl"
+        spec = importlib.util.spec_from_file_location("sheets_guard", HERE.parents[2] / ".claude" / "hooks" / "sheets_guard.py")
+        self.H = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(self.H)
+        self.H.L = L
+
+    def tearDown(self):
+        self.L.WORK, self.L.GUARD, self.L.LOG = self.saved
+        self.tmp.cleanup()
+
+    def call(self, mode, h):
+        import contextlib
+        import io
+        buf = io.StringIO()
+        if not self.L.load_guard():
+            return None
+        with contextlib.redirect_stdout(buf):
+            try:
+                (self.H.pre if mode == "pre" else self.H.post)(h, self.L.load_guard())
+            except SystemExit:
+                pass
+        s = buf.getvalue().strip()
+        return json.loads(s)["hookSpecificOutput"] if s else None
+
+    def post(self, tool, ti, resp, tid="t"):
+        return self.call("post", {"tool_name": f"mcp__Google-Sheets__{tool}", "tool_input": ti, "tool_use_id": tid,
+                                  "tool_response": [{"type": "text", "text": json.dumps(resp, ensure_ascii=False)}]})
+
+    def pre(self, tool, ti, tid="t"):
+        return self.call("pre", {"tool_name": f"mcp__Google-Sheets__{tool}", "tool_input": ti, "tool_use_id": tid})
+
+    def test_flow(self):
+        L = self.L
+        self.assertIsNone(self.pre("append_values", {"range": "'X'!A1", "values": [[1]]}))  # guard 꺼짐: 관여 안 함
+        res, _ = B.build(inp_daily(), market_fixture(), news_fixture(), {"items": []}, analysis_ok(), CFG,
+                         now=datetime(2026, 11, 9, 7, 25, tzinfo=C.KST))
+        res = json.loads(json.dumps(res))
+        sh = res["sheet"]
+        L.guard_add(sh)
+        self.post("get_spreadsheet", {}, {"sheets": [{"properties": {"title": sh, "sheetId": 77}}]}, "r1")
+        dates = ["2026-10-01", "2026-10-20", "2026-11-09"]
+        big = self.post("get_values", {"range": f"'{sh}'!A:A"},
+                        {"range": f"'{sh}'!A1:A4", "values": [["작성일"]] + [[d] for d in dates] + [["x" * 2000]][:0]}, "r2")
+        self.post("get_values", {"range": f"'{sh}'!1:1"}, {"range": f"'{sh}'!A1:Z1", "values": [res["header"][:8]]}, "r3")
+        p = W.from_log(res)
+        self.assertEqual((p["deleted_rows"], p["expect"]["start"]), (2, 3))
+        self.assertTrue(p["header_update"])
+        (L.WORK / "plan.json").write_text(json.dumps(p, ensure_ascii=False), encoding="utf-8")
+        # 세션이 값을 직접 보내면 막는다
+        d = self.pre("append_values", {"spreadsheetId": "S", "range": f"'{sh}'!A1", "values": [["직접"]]})
+        self.assertEqual(d["permissionDecision"], "deny")
+        # 다른 시트 쓰기 금지
+        self.assertEqual(self.pre("update_values", {"range": "'총자산'!A1", "values": [["@plan"]]})["permissionDecision"], "deny")
+        # 헤더·삭제 전 추가 금지
+        self.assertIn("헤더", self.pre("append_values", {"spreadsheetId": "S", "range": f"'{sh}'!A1", "values": [["@plan"]]})["permissionDecisionReason"])
+        hd = self.pre("update_values", {"spreadsheetId": "S", "range": f"'{sh}'!A1", "values": [["@plan"]]}, "h1")
+        self.assertEqual((hd["permissionDecision"], hd["updatedInput"]["values"]), ("allow", [res["header"]]))
+        self.post("update_values", hd["updatedInput"], {"updatedRange": f"'{sh}'!A1:I1"}, "h1")
+        self.assertIn("삭제", self.pre("append_values", {"spreadsheetId": "S", "range": f"'{sh}'!A1", "values": [["@plan"]]})["permissionDecisionReason"])
+        dl = self.pre("update_spreadsheet", {"spreadsheetId": "S", "requests": [{"@plan": "delete"}]}, "d1")
+        self.assertEqual(dl["updatedInput"]["requests"], p["requests"])
+        self.post("update_spreadsheet", dl["updatedInput"], {"replies": [{}]}, "d1")
+        self.assertEqual(self.pre("update_spreadsheet", {"spreadsheetId": "S", "requests": [{"@plan": "delete"}]})["permissionDecision"], "deny")  # 두 번 삭제 금지
+        ap = self.pre("append_values", {"spreadsheetId": "S", "range": f"'{sh}'!A1", "values": [["@plan"]]}, "a1")
+        self.assertEqual(ap["updatedInput"]["values"], p["append"]["values"])
+        s, e = p["expect"]["start"], p["expect"]["end"]
+        self.post("append_values", ap["updatedInput"],
+                  {"updates": {"updatedRange": f"'{sh}'!A{s}:I{e}", "updatedRows": p["expect"]["rows"]}}, "a1")
+        self.assertEqual(self.pre("append_values", {"spreadsheetId": "S", "range": f"'{sh}'!A1", "values": [["@plan"]]})["permissionDecision"], "deny")
+        _, _, miss = V.from_log(p)
+        self.assertTrue(miss)  # 재조회 전
+        self.post("get_values", {"range": p["readback"][0]}, {"range": p["readback"][0], "values": [res["header"], ["2026-10-20"]]}, "v1")
+        rb = [list(x) for x in p["append"]["values"]]
+        out = self.post("get_values", {"range": p["readback"][1]}, {"range": p["readback"][1], "values": rb, "pad": "y" * 2000}, "v2")
+        self.assertIn("rows", out["updatedMCPToolOutput"][0]["text"])  # 큰 응답은 요약만 보인다
+        app, rbs, errs = V.from_log(p)
+        self.assertEqual(errs, [])
+        self.assertEqual(V.verify(p, app, rbs), [])
+
+
 NVDA_DATE = {"data": {"reportText": "NVIDIA Corporation Common Stock is expected* to report earnings on  11/17/2026 after "
                       "market close.  The report will be for the fiscal Quarter ending Oct 2026.  According to Zacks Investment "
                       "Research, based on  13 analysts'  forecasts, the consensus EPS forecast for the quarter is $2.49.  The "
@@ -461,7 +561,7 @@ class TestEvents(unittest.TestCase):
         self.assertEqual(p["expect"]["rows"], len(er["rows"]) - 1)
         self.assertEqual(p["expect"]["start"], 4)  # 헤더 + 남은 2행 다음
         self.assertNotIn(same, p["append"]["values"])
-        self.assertEqual(p["readback"], [f"'App_주요일정'!A4:C{3 + p['expect']['rows']}"])
+        self.assertEqual(p["readback"], [f"'App_주요일정'!A4:Q{3 + p['expect']['rows']}"])
 
 
 if __name__ == "__main__":

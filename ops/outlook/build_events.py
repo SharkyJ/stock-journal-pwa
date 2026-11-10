@@ -15,6 +15,7 @@ import json
 
 import collect_calendar as K
 import common as C
+import sheetlog as L
 
 IMP = {1: "높음", 0: "보통"}
 
@@ -25,15 +26,22 @@ def fnum(v):
     return f"{v:,.2f}".rstrip("0").rstrip(".") if isinstance(v, float) else str(v)
 
 
+def txt(v):
+    """시트가 '4.2%' 같은 값을 숫자(0.042)로 바꾸지 않도록 텍스트로 고정한다."""
+    s = "" if v is None else str(v)
+    return "'" + s if s.endswith("%") else s
+
+
 def econ_row(o):
-    sub = " · ".join(x for x in [o.get("period") and f"기간 {o['period']}", o.get("reason"), o.get("comment")] if x)
+    # 지표 설명(comment)은 시트에 넣지 않는다(쓰기 토큰 절감). 앱 팝업은 출처 링크로 대신한다.
+    sub = " · ".join(x for x in [o.get("period") and f"기간 {o['period']}", o.get("reason")] if x)
     return {
         "ID": f"TV-{o['tv_id']}", "구분": "경제", "일시": o["at"][:16].replace("T", " "),
         "대상": K.COUNTRY_KO.get(o["country"], o["country"]), "종목명": "",
         "제목": (f"{o['title_ko']} ({o['title']})" if o.get("title_ko") else o["title"]),
         "중요도": "높음" if o["high"] else IMP.get(o["importance"], "낮음"),
-        "상태": "발표" if o["released"] else "예정", "예상": o.get("forecast") or "", "이전": o.get("previous") or "",
-        "실제": o.get("actual") or "", "판정": o["label"] if o["released"] else "", "점수": o["score"] if o["released"] else "",
+        "상태": "발표" if o["released"] else "예정", "예상": txt(o.get("forecast")), "이전": txt(o.get("previous")),
+        "실제": txt(o.get("actual")), "판정": o["label"] if o["released"] else "", "점수": o["score"] if o["released"] else "",
         "세부": sub[:600], "출처": o.get("source_url") or "https://www.tradingview.com/economic-calendar/",
     }
 
@@ -58,7 +66,7 @@ def earn_row(o):
     }
 
 
-def build(cal, events, cfg, now=None):
+def build(cal, events, cfg, now=None, sheet=None):
     sh = cfg["sheets"]["events"]
     head = sh["header"]
     ts = (now or C.now_kst()).strftime("%Y-%m-%d %H:%M")
@@ -76,7 +84,7 @@ def build(cal, events, cfg, now=None):
         ver = "v" + hashlib.sha1(json.dumps(body, ensure_ascii=False).encode()).hexdigest()[:10]
         r["버전"], r["갱신시각"] = ver, ts
         rows.append([r.get(h, "") for h in head])
-    return {"kind": "events", "sheet": sh["name"], "header": head, "written_at": ts, "rows": rows,
+    return {"kind": "events", "sheet": sheet or sh["name"], "header": head, "written_at": ts, "rows": rows,
             "sources": {"calendar": (cal or {}).get("status"), "events": (events or {}).get("status")}}
 
 
@@ -85,13 +93,15 @@ def main():
     ap.add_argument("--calendar", required=True)
     ap.add_argument("--events", required=True)
     ap.add_argument("--out", required=True)
+    ap.add_argument("--sheet", help="기록할 시트 이름 (기본 config sheets.events.name)")
     a = ap.parse_args()
     try:
         cal, ev = C.load_json(a.calendar), C.load_json(a.events)
     except (OSError, json.JSONDecodeError) as e:
         C.fail(f"입력 파일을 읽지 못함: {e}")
-    res = build(cal, ev, C.load_config())
+    res = build(cal, ev, C.load_config(), sheet=a.sheet)
     C.save_json(a.out, res)
+    L.guard_add(res["sheet"])  # 7단계 시트 쓰기 보호(훅)를 켠다
     print(json.dumps({"ok": True, "sheet": res["sheet"], "rows": len(res["rows"]), "sources": res["sources"]},
                      ensure_ascii=False))
 
