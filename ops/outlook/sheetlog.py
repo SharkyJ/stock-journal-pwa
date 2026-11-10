@@ -48,17 +48,22 @@ def sheet_of(r):
         return None
 
 
-def resp_json(resp):
-    """MCP 응답(문자열, content 배열, {content: [...]}, dict)을 JSON 객체로."""
-    if isinstance(resp, dict) and "content" in resp and isinstance(resp["content"], list):
+def resp_json(resp, _depth=0):
+    """MCP 응답(문자열, content 배열, {content: [...]}, {content: {...}}, dict)을 JSON 객체로.
+
+    텍스트 안에 다시 {"content": {...}} 래퍼가 있는 경우도 벗긴다."""
+    if isinstance(resp, dict) and isinstance(resp.get("content"), list):
         resp = resp["content"]
     if isinstance(resp, list):
         resp = "".join(x.get("text", "") for x in resp if isinstance(x, dict))
     if isinstance(resp, str):
         try:
-            return json.loads(resp)
+            resp = json.loads(resp)
         except json.JSONDecodeError:
             return {"_text": resp}
+    if (_depth < 3 and isinstance(resp, dict) and set(resp) <= {"content", "isError"}
+            and isinstance(resp.get("content"), (dict, str, list))):
+        return resp_json(resp["content"], _depth + 1)
     return resp if isinstance(resp, dict) else {"_raw": resp}
 
 
@@ -101,6 +106,8 @@ def log_read():
         except json.JSONDecodeError:
             continue
         o["seq"] = i
+        if "response" in o:
+            o["response"] = resp_json(o["response"])
         out.append(o)
     return out
 

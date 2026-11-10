@@ -452,6 +452,15 @@ class TestGuardHook(unittest.TestCase):
     def pre(self, tool, ti, tid="t"):
         return self.call("pre", {"tool_name": f"mcp__Google-Sheets__{tool}", "tool_input": ti, "tool_use_id": tid})
 
+    def test_content_wrapper(self):
+        L = self.L
+        meta = {"sheets": [{"properties": {"title": "S", "sheetId": 5}}]}
+        self.assertEqual(L.resp_json({"content": meta}), meta)
+        self.assertEqual(L.resp_json({"content": json.dumps(meta)}), meta)
+        self.assertEqual(L.resp_json({"content": [{"type": "text", "text": json.dumps({"content": meta})}]}), meta)
+        L.log_append({"phase": "post", "tool": "get_spreadsheet", "response": {"content": meta}})
+        self.assertEqual(L.log_read()[-1]["response"], meta)
+
     def test_flow(self):
         L = self.L
         self.assertIsNone(self.pre("append_values", {"range": "'X'!A1", "values": [[1]]}))  # guard 꺼짐: 관여 안 함
