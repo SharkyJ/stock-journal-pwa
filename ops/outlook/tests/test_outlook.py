@@ -170,14 +170,14 @@ class TestBuild(unittest.TestCase):
 
     def test_errors(self):
         a = analysis_ok()
-        a["rows"][0]["summary"] = "코스피 5,123.45. 반드시 오른다. 셋째 문장. 넷째. 다섯째."
+        a["rows"][0]["summary"] = "코스피 5,123.45. 반드시 오른다. 셋째 문장. 넷째. 다섯째. 6. 7. 8. 9."
         a["rows"][1]["outlook"] = "상승"
         a["rows"][2]["src"] = ["N9"]
         a["rows"].pop()
         a["rows"].append({"key": "night", "outlook": "중립", "summary": "x"})
         _, errs = self.build(a)
         joined = "\n".join(errs)
-        for s in ("NASDAQ:MU: analysis 에 행이 없음", "'5,123.45'", "금지 표현", "5문장", "허용값", "N9", "입력에 없는 행: NIGHT"):
+        for s in ("NASDAQ:MU: analysis 에 행이 없음", "'5,123.45'", "금지 표현", "9문장", "허용값", "N9", "입력에 없는 행: NIGHT"):
             self.assertIn(s, joined)
 
     def test_stale_needs_note(self):
