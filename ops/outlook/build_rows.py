@@ -16,6 +16,7 @@ import re
 from datetime import date, timedelta
 
 import common as C
+import sheetlog as L
 
 NUM_RE = re.compile(r"[+\-−]?\d[\d,]*(?:\.\d+)?%?")
 # 날짜·시각·기간처럼 수치 검증 대상이 아닌 표현은 먼저 지운다
@@ -262,6 +263,7 @@ def main():
         print(json.dumps({"ok": False, "retry": True, "errors": errs}, ensure_ascii=False, indent=1))
         raise SystemExit(C.RETRY)
     C.save_json(a.out, res)
+    L.guard_add(res["sheet"])  # 7단계 시트 쓰기 보호(훅)를 켠다
     print(json.dumps({"ok": True, "sheet": res["sheet"], "rows": len(res["rows"]),
                       "delete_before": res["delete_before"]}, ensure_ascii=False))
 

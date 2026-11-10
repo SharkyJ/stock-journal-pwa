@@ -19,8 +19,9 @@
 | `collect_events.py` | 보유 종목 실적 | `input.json`, `market.json` → `events.json` (E..) |
 | `build_rows.py` | 6단계 검증·행 조립 | `input`, `market`, `news`, `calendar`, `events`, `extra_sources`, `analysis` → `rows.json` |
 | `build_events.py` | 6단계 주요일정 행 | `calendar`, `events` → `events_rows.json` |
-| `plan_write.py` | 7단계 기록 계획 | 데이터 + 시트 응답 원문 → `plan.json` (삭제 요청, 추가 값, 시작 행, 재조회 범위) |
-| `verify_written.py` | 8단계 기록 검증 | `plan.json` + append·재조회 응답 원문 → 결과 |
+| `plan_write.py` | 7단계 기록 계획 | 데이터 + 훅 기록(`work/sheet_log.jsonl`) → `plan.json` (삭제 요청, 추가 값, 시작 행, 재조회 범위) |
+| `verify_written.py` | 8단계 기록 검증 | `plan.json` + 훅 기록의 append·재조회 응답 → 결과 |
+| `sheetlog.py` | 공용 | 훅 기록·guard 읽기쓰기. 훅은 `.claude/hooks/sheets_guard.py`(설정 `.claude/settings.json`) |
 | `config.json` | 공통 설정 | 지수 목록, 기초자산 매핑, 뉴스 쿼리, 허용값, 길이 제한, 금지 표현, 시트 헤더 |
 | `common.py` | 공용 | HTTP 재시도, 심볼 변환, 입력 정리 |
 
@@ -37,8 +38,9 @@ python3 build_rows.py --input work/input.json --market work/market.json --news w
   --calendar work/calendar.json --events work/events.json \
   --extra work/extra_sources.json --analysis work/analysis.json --out work/rows.json --sheet App_일간전망_v2
 python3 build_events.py --calendar work/calendar.json --events work/events.json --out work/events_rows.json
-python3 plan_write.py --data work/rows.json --sheet-id 123 --cola work/cola.json --head work/head.json --out work/plan.json
-python3 verify_written.py --plan work/plan.json --append work/append.json --readback work/rb1.json work/rb2.json
+# 7·8단계는 시트 커넥터 호출이 필요하다(훅이 기록). 기록이 있으면:
+python3 plan_write.py --data work/rows.json --out work/plan.json
+python3 verify_written.py --plan work/plan.json
 ```
 
 ## 테스트

@@ -1,24 +1,25 @@
 """시트 기록 계획 (결정적). 7단계의 삭제·추가를 코드가 계산한다.
 
-세션은 시트에서 읽은 응답을 그대로 파일로 저장해 넘기고, 이 스크립트가 만든 plan.json 의 요청을
-그대로 실행한다. 지울 행, 추가할 값, 추가 후 시작 행, 8단계 재조회 범위가 모두 여기서 정해진다.
+시트 응답은 세션이 파일로 옮기지 않는다. 훅(.claude/hooks/sheets_guard.py)이 커넥터 응답 원문을
+work/sheet_log.jsonl 에 남기고, 이 스크립트는 그 기록만 읽는다. 결과 plan.json 의 요청은 세션이
+자리표시자(@plan)로 호출하면 훅이 그대로 채워 실행한다.
 
 전망(rows.json): 오늘 작성일 행과 보관 기간이 지난 행을 지우고 오늘 행을 모두 추가한다.
 주요일정(events_rows.json): ID 가 같은데 버전이 다른 행만 지우고 다시 추가, 새 ID 는 추가, 같으면 건너뛴다.
     기존 행은 지우지 않는다.
 
-입력 파일은 커넥터 응답 원문이다.
-  --cola  get_values('시트'!A:A) 응답 (주요일정은 '시트'!A:B). 시트가 없으면 생략하고 --new 를 준다.
-  --head  get_values('시트'!1:1) 응답 (헤더 확인용, 생략 가능)
-사용: python3 plan_write.py --data work/rows.json --sheet-id 123 --cola work/cola.json --head work/head.json \\
-          --out work/plan.json
-종료 코드: 0 계획 생성, 2 입력 오류(응답 형식이 다르거나 시트 이름 불일치)
+필요한 읽기(7-1, 이 순서와 상관없이 마지막 쓰기 이후의 것만 인정):
+  get_spreadsheet, 전망 시트 'S'!A:A 와 'S'!1:1, 주요일정 시트 'S'!A:B
+사용: python3 plan_write.py --data work/rows.json --out work/plan.json
+종료 코드: 0 계획 생성, 1 읽기 부족(출력된 읽기를 하고 다시 실행), 2 입력 오류
 """
 import argparse
 import json
 import re
+import time
 
 import common as C
+import sheetlog as L
 from verify_written import norm, norm_date, parse_range
 
 
@@ -88,8 +89,9 @@ def plan(data, sheet_id, cola=None, head=None, new=False):
         hdr_update = {"range": f"'{sheet}'!A1:{col_letter(ncol)}1", "values": [header]}
     start = last + 1
     end = start + len(append) - 1
-    vc = 3 if events else 5
-    res = {"sheet": sheet, "sheet_id": sheet_id, "kind": "events" if events else "outlook",
+    vc = ncol  # 재조회 응답은 세션에 보이지 않으므로(훅이 요약) 모든 열을 대조한다
+    res = {"id": f"{sheet}@{int(time.time() * 1000)}", "sheet": sheet, "sheet_id": sheet_id,
+           "kind": "events" if events else "outlook",
            "header_update": hdr_update, "requests": deletes(sheet_id, kill), "deleted_rows": len(kill),
            "append": {"range": f"'{sheet}'!A1", "values": append},
            "expect": {"start": start, "end": end, "rows": len(append), "cols": vc},
@@ -101,29 +103,79 @@ def plan(data, sheet_id, cola=None, head=None, new=False):
     return res
 
 
+def last_write_seq(log, sheet):
+    """이 시트에 마지막으로 쓴 기록의 순번(없으면 -1). 그 뒤의 읽기만 인정한다."""
+    s = -1
+    for r in log:
+        if r.get("phase") != "post" or r.get("tool") not in ("append_values", "update_values", "update_spreadsheet"):
+            continue
+        inp = r.get("input") or {}
+        hit = L.sheet_of(inp.get("range")) == sheet if inp.get("range") else sheet in json.dumps(inp, ensure_ascii=False)
+        if hit or r.get("tool") == "update_spreadsheet":
+            s = r["seq"]
+    return s
+
+
+def find_read(log, sheet, spec, after):
+    for r in reversed(log):
+        if r["seq"] <= after:
+            break
+        if r.get("phase") == "post" and r.get("tool") == "get_values":
+            rg = (r.get("input") or {}).get("range", "")
+            if L.sheet_of(rg) == sheet and L.range_spec(rg) == spec:
+                return r["response"]
+    return None
+
+
+def from_log(data, log=None):
+    """훅 기록에서 sheetId·A열·1행을 찾아 계획을 만든다. 부족하면 ValueError(해야 할 읽기)."""
+    log = L.log_read() if log is None else log
+    sheet = data["sheet"]
+    after = last_write_seq(log, sheet)
+    meta = next((r["response"] for r in reversed(log) if r.get("phase") == "post" and r.get("tool") == "get_spreadsheet"
+                 and r["seq"] > after), None)
+    if meta is None:
+        raise LookupError("get_spreadsheet(fields sheets.properties.sheetId, sheets.properties.title)를 읽는다")
+    ids = {((s.get("properties") or {}).get("title")): (s.get("properties") or {}).get("sheetId")
+           for s in meta.get("sheets") or []}
+    if sheet not in ids:
+        raise LookupError(f"시트 {sheet} 가 없다. update_spreadsheet addSheet 로 만든 뒤 get_spreadsheet 를 다시 읽는다")
+    events = data.get("kind") == "events"
+    spec = "A:B" if events else "A:A"
+    cola = find_read(log, sheet, spec, after)
+    if cola is None:
+        raise LookupError(f"get_values '{sheet}'!{spec} 를 읽는다")
+    head = None if events else find_read(log, sheet, "1:1", after)
+    if not events and head is None:
+        raise LookupError(f"get_values '{sheet}'!1:1 을 읽는다")
+    cola.setdefault("values", [])
+    if head is not None:
+        head.setdefault("values", [])
+    return plan(data, ids[sheet], cola, head)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--data", required=True, help="rows.json 또는 events_rows.json")
-    ap.add_argument("--sheet-id", type=int, required=True, help="get_spreadsheet 의 sheets.properties.sheetId")
-    ap.add_argument("--cola", help="A열(주요일정은 A:B) get_values 응답 원문")
-    ap.add_argument("--head", help="1행 get_values 응답 원문")
-    ap.add_argument("--new", action="store_true", help="시트를 방금 만들었다(헤더부터 쓴다)")
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
     try:
         data = C.load_json(a.data)
-        cola = C.load_json(a.cola) if a.cola else None
-        head = C.load_json(a.head) if a.head else None
-        if cola is None and not a.new:
-            raise ValueError("--cola 또는 --new 가 필요")
-        res = plan(data, a.sheet_id, cola, head, a.new)
-    except (OSError, json.JSONDecodeError, ValueError, KeyError) as e:
+    except (OSError, json.JSONDecodeError) as e:
+        C.fail(f"데이터 파일을 읽지 못함: {e}")
+    if not L.load_guard():
+        C.fail("guard 가 꺼져 있다. 6단계(build_rows.py·build_events.py)를 다시 실행한다")
+    try:
+        res = from_log(data)
+    except LookupError as e:
+        print(json.dumps({"ok": False, "retry": True, "need": str(e)}, ensure_ascii=False))
+        raise SystemExit(C.RETRY)
+    except (ValueError, KeyError) as e:
         C.fail(f"기록 계획을 만들지 못함: {e}")
     C.save_json(a.out, res)
     print(json.dumps({"ok": True, "sheet": res["sheet"], "header_update": bool(res["header_update"]),
-                      "delete_requests": len(res["requests"]), "deleted_rows": res["deleted_rows"],
-                      "append_rows": res["expect"]["rows"], "start": res["expect"]["start"],
-                      "readback": res["readback"]}, ensure_ascii=False))
+                      "deleted_rows": res["deleted_rows"], "append_rows": res["expect"]["rows"],
+                      "start": res["expect"]["start"], "readback": res["readback"]}, ensure_ascii=False))
 
 
 if __name__ == "__main__":

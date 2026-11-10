@@ -74,40 +74,32 @@ cd ops/outlook && python3 collect.py --input work/input.json --work work
 cd ops/outlook && python3 build_rows.py --input work/input.json --market work/market.json --news work/news.json \
   --calendar work/calendar.json --events work/events.json \
   --extra work/extra_sources.json --analysis work/analysis.json --out work/rows.json --sheet "$TARGET_SHEET" \
-  && python3 build_events.py --calendar work/calendar.json --events work/events.json --out work/events_rows.json
+  && python3 build_events.py --calendar work/calendar.json --events work/events.json --out work/events_rows.json \
+  --sheet "${EVENTS_SHEET:-App_주요일정}"
 ```
 
-종료 코드 1이면 errors에 나온 행만 Edit로 고치고 1회만 다시 실행한다. 다시 실패하면 쓰지 않고 중단한다.
+종료 코드 1이면 errors에 나온 행만 Edit로 고치고 1회만 다시 실행한다. 다시 실패하면 쓰지 않고 중단한다. 통과하면 시트 쓰기 보호(훅)가 켜진다. `rows.json`·`events_rows.json`은 열어 보거나 출력하지 않는다.
 
-## 7. 기록 — 4턴. 지울 행과 추가 위치는 `plan_write.py`가 정한다
+## 7. 기록 — 4턴. 값은 훅이 채운다
 
-공통 규칙 "시트 쓰기"를 따른다. 커넥터 응답은 **받은 그대로** 파일에 저장한다(가공·요약·재구성 금지).
+공통 규칙 "시트 쓰기"를 따른다. 쓰기 호출의 값 자리에는 **자리표시자만** 넣는다. 실제 값은 훅이 `plan.json`에서 채우고, 다른 값·다른 시트·잘못된 순서는 훅이 막는다. 시트 응답은 훅이 원문을 저장하므로 파일로 옮기지 않는다.
 
-1. 한 턴, 병렬 호출: `get_spreadsheet`(fields `sheets.properties.sheetId`, `sheets.properties.title`), `get_values` `'TARGET_SHEET'!A:A`, `'TARGET_SHEET'!1:1`, `'EVENTS_SHEET'!A:B`. 없는 시트는 `update_spreadsheet`의 `addSheet`로 만들고 아래에서 `--new`를 쓴다.
-2. 한 턴: 응답을 그대로 `work/cola.json`, `work/head.json`, `work/ev_cola.json`에 Write(병렬)하고 계획을 만든다.
+1. 한 턴, 병렬 호출: `get_spreadsheet`(fields `sheets.properties.sheetId`, `sheets.properties.title`), `get_values` `'TARGET_SHEET'!A:A`, `'TARGET_SHEET'!1:1`, `'EVENTS_SHEET'!A:B`.
+2. 한 턴: `cd ops/outlook && python3 plan_write.py --data work/rows.json --out work/plan.json && python3 plan_write.py --data work/events_rows.json --out work/ev_plan.json`
+   - 종료 코드 1이면 `need`에 적힌 읽기를 하고 다시 실행한다. 시트가 없다고 나오면 `update_spreadsheet`에 `addSheet`(그 시트 이름만)로 만들고 7-1부터 다시 한다.
+3. 한 턴, 병렬 호출(해당하는 것만):
+   - 두 plan 중 `header_update`가 true인 시트: `update_values`(range `'시트'!A1`, values `[["@plan"]]`)
+   - `deleted_rows`가 0보다 큰 plan이 있으면: `update_spreadsheet`(requests `[{"@plan": "delete"}]`) **한 번**. 두 plan의 삭제를 훅이 합쳐 보낸다.
+4. 한 턴, 병렬 호출: `append_rows`가 0보다 큰 시트마다 `append_values`(range `'시트'!A1`, values `[["@plan"]]`).
 
-```bash
-cd ops/outlook && python3 plan_write.py --data work/rows.json --sheet-id <TARGET sheetId> --cola work/cola.json \
-  --head work/head.json --out work/plan.json \
-  && python3 plan_write.py --data work/events_rows.json --sheet-id <EVENTS sheetId> --cola work/ev_cola.json \
-  --out work/ev_plan.json
-```
-
-3. 한 턴, 병렬 호출: 두 plan의 `header_update`가 있으면 `update_values`로 쓴다. 두 plan의 `requests`를 합쳐(전망 먼저) **한 번의** `update_spreadsheet`로 보낸다(비어 있으면 건너뛴다).
-4. 한 턴, 병렬 호출: `plan.json`의 `append.values`를 `append_values`(range = `append.range`)로 추가한다. `ev_plan.json`도 `append.values`가 비어 있지 않으면 같은 방식으로 추가한다. 값은 파일에 있는 그대로 쓴다.
+훅이 거부하면 거부 사유대로 한다. 값을 직접 넣어 다시 시도하지 않는다.
 
 ## 8. 기록 검증 — 2턴
 
-1. 한 턴, 병렬 호출: 두 plan의 `readback` 범위를 순서대로 `get_values`로 읽는다.
-2. 한 턴: 4번의 append 응답과 재조회 응답을 **그대로** `work/append.json`, `work/rb1.json`, `work/rb2.json`, `work/ev_append.json`, `work/ev_rb1.json`에 Write(병렬)하고 검증한다.
+1. 한 턴, 병렬 호출: 두 plan 출력의 `readback` 범위를 모두 `get_values`로 읽는다(응답은 훅이 요약해 보여준다).
+2. 한 턴: `cd ops/outlook && python3 verify_written.py --plan work/plan.json && python3 verify_written.py --plan work/ev_plan.json`
 
-```bash
-cd ops/outlook && python3 verify_written.py --plan work/plan.json --append work/append.json \
-  --readback work/rb1.json work/rb2.json \
-  && python3 verify_written.py --plan work/ev_plan.json --append work/ev_append.json --readback work/ev_rb1.json
-```
-
-`ev_plan.json`에 추가한 행이 없으면 두 번째 명령은 `--append`·`--readback` 없이 실행한다. 응답 파일을 `rows.json`·`plan.json`에서 만들면 `range`·`updatedRange`가 없어 검증이 실패한다. 종료 코드 1이면 7-1부터 다시(최대 2회). 그래도 실패하면 오늘 전망 행을 지우고 중단한다(주요일정은 지우지 않는다).
+검증기는 훅이 저장한 응답 원문만 읽는다(세션이 만든 파일은 쓰지 않는다). 종료 코드 1이면 errors대로 한다: 재조회가 없다는 오류면 8-1만 다시, 값·위치 불일치면 7-1부터 다시(최대 2회). 그래도 실패하면 중단하고 errors를 보고한다.
 
 ## 마무리
 
