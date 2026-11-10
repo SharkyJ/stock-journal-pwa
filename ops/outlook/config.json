@@ -52,7 +52,7 @@
     }
   },
   "limits": {
-    "daily": {"summary_chars": 520, "summary_sentences": 4, "check_chars": 300, "src_max": 3},
+    "daily": {"summary_chars": 1000, "summary_sentences": 8, "check_chars": 300, "src_max": 3},
     "weekly": {"summary_chars": 420, "summary_sentences": 3, "check_chars": 300, "src_max": 3}
   },
   "forbidden": ["매수하세요", "매도하세요", "사세요", "파세요", "매수 추천", "매도 추천", "강력 추천", "반드시 오", "반드시 내", "확실히 오", "확실히 내", "무조건"]
