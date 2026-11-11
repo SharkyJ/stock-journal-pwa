@@ -520,7 +520,10 @@ def brief(inp, market, news, cal, events, cfg, now=None):
         r["news"] = [{"id": n["id"], "title": n["title"], "hint": n.get("hint"), "published": n.get("published")}
                      for n in r["news"]]
     ks = D.key_signals(inp, ctx.cal, ctx.events, news, now) if cal is not None else []
-    return {"date": inp["date"], "mode": inp["mode"], "key_signals": ks, "rows": rows}
+    # 수집된 실제 값은 어느 행에서든 인용할 수 있다(근거 없는 수치만 검증에서 거부)
+    shared = list(market["items"]) + [i for i in (cal or {}).get("order", [])] + [i for i in (events or {}).get("order", [])]
+    return {"date": inp["date"], "mode": inp["mode"], "key_signals": ks, "rows": rows,
+            "shared_nums": shared, "news_ids": [n["id"] for n in news.get("items", [])]}
 
 
 def table_text(tabs):
@@ -534,8 +537,8 @@ def table_text(tabs):
 def brief_text(dr):
     daily = dr["mode"] == "daily"
     out = [f"# {dr['date']} {dr['mode']} 작성 과제",
-           "각 행의 lead(판단과 근거 서술)를 쓴다. 지표 표·체크포인트·출처 URL 은 코드가 채운다. lead 의 숫자는 그 행 표·뉴스에 있는 값만 쓴다.",
-           "src 에는 그 행의 뉴스나 시장 뉴스(market 행) ID 를 쓴다. 전망은 규칙 점수로 정해져 있다. 뉴스 제목을 읽고 달리 볼 근거가 분명할 때만 adjust ±1 과 why 를 쓴다."]
+           "각 행의 lead(판단과 근거 서술)를 쓴다. 지표 표·체크포인트·출처 URL 은 코드가 채운다. lead 의 숫자는 작성 과제의 표·뉴스에 있는 값만 쓴다(다른 행 표도 가능).",
+           "src 에는 근거 뉴스 ID(어느 행의 것이든)를 쓴다. 전망은 규칙 점수로 정해져 있다. 뉴스 제목을 읽고 달리 볼 근거가 분명할 때만 adjust ±1 과 why 를 쓴다."]
     if dr["key_signals"]:
         out += ["## 핵심 신호"] + [f"- {x}" for x in dr["key_signals"]]
     for r in dr["rows"]:
@@ -564,7 +567,8 @@ def merge(dr, notes, cfg):
     for k in nr:
         if k not in keys:
             errs.append(f"notes: 없는 행 {k}")
-    market_news = {x["id"] for x in dr["rows"][0]["news"]} if dr["rows"] and dr["rows"][0]["key"] == "market" else set()
+    all_news = set(dr.get("news_ids") or [])
+    shared = dr.get("shared_nums") or []
     for r in dr["rows"]:
         n = nr.get(r["key"]) or {}
         lead = str(n.get("lead") or "").strip()
@@ -582,14 +586,14 @@ def merge(dr, notes, cfg):
         if adj and not str(n.get("why") or "").strip():
             errs.append(f"{r['key']}: adjust 를 쓰면 why 가 필요")
         own = [i for i in (n.get("src") or []) if i]
-        okids = {x["id"] for x in r["news"]} | market_news  # 시장 뉴스는 모든 행에서 인용할 수 있다
+        okids = {x["id"] for x in r["news"]} | all_news  # 수집된 뉴스는 모든 행에서 인용할 수 있다
         bad = [i for i in own if i not in okids and not re.fullmatch(r"W\d+", str(i))]
         if bad:
-            errs.append(f"{r['key']}: src {', '.join(bad)} 는 이 행·시장 뉴스나 보완 출처가 아님")
+            errs.append(f"{r['key']}: src {', '.join(bad)} 는 수집된 뉴스나 보완 출처가 아님")
         src = list(dict.fromkeys(own + r["auto_src"]))[:lim["src_max"]]
         summary = (lead + " " + " ".join(r["facts"])).strip()
         ck = r["checkpoint"]
-        row = {"key": r["key"], "summary": summary, "nums": r["nums"], "src": src,
+        row = {"key": r["key"], "summary": summary, "nums": list(dict.fromkeys(r["nums"] + shared)), "src": src,
                "table": json.dumps(r.get("table") or [], ensure_ascii=False, separators=(",", ":"))}
         if daily:
             row["outlook"] = shift(r["outlook"], adj)

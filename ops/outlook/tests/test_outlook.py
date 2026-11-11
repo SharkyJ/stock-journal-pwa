@@ -134,6 +134,14 @@ class TestDraft(unittest.TestCase):
         an, _ = DR.merge(dr, notes, CFG)
         _, errs = B.build(inp, mk, nw, {"items": []}, an, CFG, now=now)
         self.assertTrue(any("123,456" in e for e in errs))  # 근거 없는 수치는 여전히 거부
+        # 다른 행의 표 수치·뉴스도 인용 가능 (11-11 실패: 반도체지수 -0.35% 를 ETF 행에 씀)
+        notes["rows"]["NASDAQ:MU"]["lead"] = "기초자산 지수가 4.21% 올랐고 삼성전자도 0.64% 올랐다."
+        notes["rows"]["NASDAQ:MU"]["src"] = ["N2"]
+        notes["rows"]["KRX:005930"]["lead"] = "특별한 뉴스는 없다."
+        an, errs = DR.merge(dr, notes, CFG)
+        self.assertEqual(errs, [])
+        _, errs = B.build(inp, mk, nw, {"items": []}, an, CFG, now=now)
+        self.assertEqual(errs, [])
 
     def test_flat_quote_and_no_range_sentence(self):
         import draft as DR
