@@ -1,4 +1,4 @@
-"""시트 기록 계획 (결정적). 7단계의 삭제·추가를 코드가 계산한다.
+"""시트 기록 계획 (결정적). 5단계의 삭제·추가를 코드가 계산한다.
 
 시트 응답은 세션이 파일로 옮기지 않는다. 훅(.claude/hooks/sheets_guard.py)이 커넥터 응답 원문을
 work/sheet_log.jsonl 에 남기고, 이 스크립트는 그 기록만 읽는다. 결과 plan.json 의 요청은 세션이
@@ -8,7 +8,7 @@ work/sheet_log.jsonl 에 남기고, 이 스크립트는 그 기록만 읽는다.
 주요일정(events_rows.json): ID 가 같은데 버전이 다른 행만 지우고 다시 추가, 새 ID 는 추가, 같으면 건너뛴다.
     기존 행은 지우지 않는다.
 
-필요한 읽기(7-1, 이 순서와 상관없이 마지막 쓰기 이후의 것만 인정):
+필요한 읽기(5-1, 이 순서와 상관없이 마지막 쓰기 이후의 것만 인정):
   get_spreadsheet, 전망 시트 'S'!A:A 와 'S'!1:1, 주요일정 시트 'S'!A:B
 사용: python3 plan_write.py --data work/rows.json --out work/plan.json
 종료 코드: 0 계획 생성, 1 읽기 부족(출력된 읽기를 하고 다시 실행), 2 입력 오류
@@ -164,7 +164,7 @@ def main():
     except (OSError, json.JSONDecodeError) as e:
         C.fail(f"데이터 파일을 읽지 못함: {e}")
     if not L.load_guard():
-        C.fail("guard 가 꺼져 있다. 6단계(build_rows.py·build_events.py)를 다시 실행한다")
+        C.fail("guard 가 꺼져 있다. 4단계(draft.py merge·build_rows.py·build_events.py)를 다시 실행한다")
     try:
         res = from_log(data)
     except LookupError as e:

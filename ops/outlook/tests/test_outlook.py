@@ -68,6 +68,62 @@ def analysis_ok():
     ]}
 
 
+class TestDraft(unittest.TestCase):
+    def fixture(self):
+        mk = market_fixture()
+        mk["items"]["M8"] = {"id": "M8", "sym": "^SOX", "label": "필라델피아 반도체", "status": "ok", "value": 9390.25, "chg_pct": 4.21}
+        mk["items"]["T4"].update(hi20=249000.0, ma20=216000.0, vs_ma60_pct=-19.6, eps_rev_pct=8.56, eps_rev_days=30)
+        mk["items"]["T5"].update(chg_pct=12.1, lo20=40.59, hi20=127.92, vs_ma20_pct=-35.2)
+        mk["tickers"] = [{"ticker": "KRX:005930", "name": "삼성전자", "kind": "보유", "id": "T4"},
+                         {"ticker": "NYSEARCA:SOXL", "name": "SOXL", "kind": "보유", "id": "T5", "under_id": "U6"},
+                         {"ticker": "NASDAQ:MU", "name": "마이크론", "kind": "관심", "id": "T7"}]
+        nw = news_fixture()
+        for n in nw["items"]:
+            n.update(scope="market" if n["id"] == "N1" else "KRX:005930", hint="악재" if n["id"] == "N1" else "호재",
+                     published="2026-11-09T07:00+09:00")
+        inp = inp_daily()
+        inp["signals"] = [{"date": "2026-11-06", "ticker": "KRX:005930", "strategy": "추세추종", "signal": "매도·경계"}]
+        return inp, mk, nw
+
+    def test_brief_merge_passes_validation(self):
+        import draft as DR
+        inp, mk, nw = self.fixture()
+        now = datetime(2026, 11, 9, 7, 25, tzinfo=C.KST)
+        dr = json.loads(json.dumps(DR.brief(inp, mk, nw, None, None, CFG, now)))
+        self.assertEqual([r["key"] for r in dr["rows"]], ["market", "KRX:005930", "NYSEARCA:SOXL", "NASDAQ:MU"])
+        sam = dr["rows"][1]
+        self.assertIn("앱 신호: 11/6 추세추종 매도·경계", sam["checkpoint"])
+        self.assertIn("레버리지 3배", dr["rows"][2]["checkpoint"])
+        self.assertIn("기초자산 필라델피아 반도체", " ".join(dr["rows"][2]["facts"]))
+        self.assertIn(sam["outlook"], CFG["outlook_values"])
+        notes = {"rows": {r["key"]: {"lead": "반도체 강세가 이어졌다"} for r in dr["rows"]}}
+        notes["rows"]["NASDAQ:MU"]["adjust"] = 1
+        an, errs = DR.merge(dr, notes, CFG)
+        self.assertEqual(errs, ["NASDAQ:MU: adjust 를 쓰면 why 가 필요"])
+        notes["rows"]["NASDAQ:MU"]["why"] = "N2"
+        an, errs = DR.merge(dr, notes, CFG)
+        self.assertEqual(errs, [])
+        self.assertEqual(an["rows"][3]["outlook"], DR.shift(dr["rows"][3]["outlook"], 1))
+        res, errs = B.build(inp, mk, nw, {"items": []}, an, CFG, now=now)
+        self.assertEqual(errs, [])
+        self.assertTrue(res["rows"][1][5].startswith("반도체 강세가 이어졌다. 삼성전자는 189,900"))
+
+    def test_merge_rejects_numbers_in_lead(self):
+        import draft as DR
+        inp, mk, nw = self.fixture()
+        dr = json.loads(json.dumps(DR.brief(inp, mk, nw, None, None, CFG, datetime(2026, 11, 9, 7, 25, tzinfo=C.KST))))
+        notes = {"rows": {r["key"]: {"lead": "특별한 뉴스는 없다."} for r in dr["rows"]}}
+        notes["rows"]["market"]["lead"] = "코스피가 5,018.85로 밀렸다."
+        notes["rows"]["KRX:005930"]["src"] = ["N1"]
+        _, errs = DR.merge(dr, notes, CFG)
+        self.assertEqual(len(errs), 2)
+
+    def test_levels(self):
+        import draft as DR
+        self.assertEqual([DR.level(x) for x in (-4, -1, 0, 2, 3)], ["약세", "약약세", "중립", "약강세", "강세"])
+        self.assertEqual(DR.shift("강세", 1), "강세")
+
+
 class TestCommon(unittest.TestCase):
     def test_ysym(self):
         self.assertEqual(C.ysym("KRX:005930", "KR"), "005930.KS")
@@ -463,6 +519,40 @@ class TestGuardHook(unittest.TestCase):
 
     def pre(self, tool, ti, tid="t"):
         return self.call("pre", {"tool_name": f"mcp__Google-Sheets__{tool}", "tool_input": ti, "tool_use_id": tid})
+
+    def test_prepare_input_capture(self):
+        import prepare as P
+        L = self.L
+        P.L = L
+        reads = P.begin("daily")
+        self.assertEqual(L.load_guard()["phase"], "input")
+        self.assertTrue(self.pre("append_values", {"range": "'X'!A1", "values": [[1]]}))  # 입력 단계: 쓰기 거부
+        data = {
+            "'국장투자'!A5:D": [["", "삼성전자", "KRX:005930", "10"], ["", "현금", "", ""], ["", "SK", "KRX:000660", "0"]],
+            "'미장투자'!A5:D": [["", "MU", "NASDAQ:MU", "1,200"]],
+            "'App_관심종목'!A2:C": [["NASDAQ:MU", "마이크론"], ["NASDAQ:INTC", "인텔"]],
+            "'App_시그널'!B2:H": [["2026-11-10", "", "NASDAQ:MU", "", "", "돌파", "매수 신호"],
+                                  ["2026-11-01", "", "NASDAQ:MU", "", "", "추세추종", "매도·경계"]],
+            "'App_전망'!A2:G": [["2026-11-02", "시장", "", "시장 전체", "중립", "중립", "강세"],
+                                ["2026-11-09", "시장", "", "시장 전체", "약강세", "중립", "강세"]],
+            "'App_재무추이'!B2:D": [["2026-10-20", "", "KRX:005930"], ["2026-08-01", "", "KRX:005930"]],
+            "'App_재무추이'!L2:P": [["2026-12-31", "40,000", "2027-12-31", "52,000", "400,000"], ["", "", "", "", ""]],
+        }
+        self.assertEqual(sorted(reads), sorted(data))
+        for i, (rng, v) in enumerate(data.items()):
+            out = self.post("get_values", {"range": rng}, {"range": rng, "values": v}, f"r{i}")
+            self.assertIn("rows", out["updatedMCPToolOutput"][0]["text"])  # 값은 세션에 보이지 않는다
+        log = L.log_read()
+        vals = {k: P.find(log, r) for k, r in P.reads_for("daily").items()}
+        inp = P.build("daily", vals, datetime(2026, 11, 11).date())
+        self.assertEqual([h["ticker"] for h in inp["holdings"]], ["KRX:005930", "NASDAQ:MU"])
+        self.assertEqual([s["date"] for s in inp["signals"]], ["2026-11-10"])
+        self.assertEqual(inp["weekly"][0]["s"], "약강세")
+        self.assertEqual(inp["fin"], [{"date": "2026-10-20", "ticker": "KRX:005930", "f0end": "2026-12-31", "f0eps": 40000.0,
+                                       "f1end": "2027-12-31", "f1eps": 52000.0, "target": 400000.0}])
+        self.assertEqual(inp["date"], "2026-11-11")
+        L.guard_add("App_일간전망")
+        self.assertEqual(L.load_guard()["phase"], "write")
 
     def test_content_wrapper(self):
         L = self.L

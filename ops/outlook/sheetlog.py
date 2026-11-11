@@ -4,7 +4,7 @@
 work/sheet_log.jsonl 에 남긴다. plan_write.py·verify_written.py 는 세션이 만든 파일이 아니라
 이 기록만 읽는다. 세션은 응답을 옮겨 적지 않고, 쓰기 값은 훅이 plan.json 에서 채운다.
 
-guard(work/guard.json)는 6단계(build_rows.py·build_events.py)가 켠다. 켜져 있는 동안에는
+guard(work/guard.json)는 1단계(prepare.py begin)가 입력 수집 단계로 켜고, 4단계(build_rows.py·build_events.py)가 기록 단계로 바꾼다. 켜져 있는 동안에는
 등록된 시트에만, plan.json 이 정한 요청만 쓸 수 있다. 2시간이 지나면 꺼진 것으로 본다.
 """
 import json
@@ -78,9 +78,10 @@ def load_guard():
 
 
 def guard_add(sheet):
-    """6단계에서 기록 대상 시트를 등록하고 guard 를 켠다."""
+    """4단계에서 기록 대상 시트를 등록하고 guard 를 켠다."""
     WORK.mkdir(parents=True, exist_ok=True)
     g = load_guard() or {"started": time.time(), "sheets": []}
+    g["phase"] = "write"
     if sheet not in g["sheets"]:
         g["sheets"].append(sheet)
     GUARD.write_text(json.dumps(g, ensure_ascii=False), encoding="utf-8")
