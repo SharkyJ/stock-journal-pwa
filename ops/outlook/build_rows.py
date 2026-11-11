@@ -104,6 +104,11 @@ class Ctx:
         for src in (cal, events):
             for k, v in ((src or {}).get("items") or {}).items():
                 self.items[k] = {kk: vv for kk, vv in v.items() if kk not in ("status", "score", "days")}
+                # 캘린더 표시값(예상·이전·실제)은 문자열이라 숫자로 풀어 인용 가능하게 한다
+                txt = [str(v.get(f)) for f in ("forecast", "previous", "actual") if v.get(f) not in (None, "")]
+                if txt:
+                    self.items[k]["_shown"] = [x[0] for t in txt for x in numbers_in(t)] + \
+                        [float(m) for t in txt for m in re.findall(r"\d+(?:\.\d+)?", t)]
         self.src = {}
         for o in news.get("items", []):
             self.src[o["id"]] = {"url": o["url"], "nums": [x[0] for x in numbers_in(o["title"])],

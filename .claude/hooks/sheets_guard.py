@@ -75,7 +75,7 @@ def pre(h, g):
         if pl["requests"] and not L.applied(log, pl["id"], "delete"):
             deny("삭제(update_spreadsheet)가 먼저 끝나야 한다")
         if L.applied(log, pl["id"], "append"):
-            deny("이 plan 의 추가는 이미 실행됐다. 다시 쓰려면 7단계 읽기부터 다시 하고 plan 을 새로 만든다")
+            deny("이 plan 의 추가는 이미 실행됐다. 다시 쓰려면 5단계 읽기부터 다시 하고 plan 을 새로 만든다")
         new = dict(ti, range=pl["append"]["range"], values=pl["append"]["values"])
         allow(new, pl["id"], "append", tid)
     if kind == "update_values":
@@ -112,7 +112,7 @@ def summarize(kind, ti, resp):
     if kind == "get_values":
         vals = j.get("values") or []
         return {"range": j.get("range"), "rows": len(vals),
-                "note": "원문은 sheet_log.jsonl 에 저장됨. 이 값을 옮겨 적지 않는다. plan_write.py·verify_written.py 가 읽는다."}
+                "note": "원문은 sheet_log.jsonl 에 저장됨. 이 값을 옮겨 적지 않는다. 스크립트가 기록에서 읽는다."}
     if kind == "get_spreadsheet":
         return {"sheets": [((s.get("properties") or {}).get("title"), (s.get("properties") or {}).get("sheetId"))
                            for s in j.get("sheets") or []], "note": "원문은 sheet_log.jsonl 에 저장됨"}
@@ -131,7 +131,9 @@ def post(h, g):
                       "step": pre_rec.get("step"), "input": ti, "response": L.resp_json(resp)})
     big = len(json.dumps(resp, ensure_ascii=False)) > 1500
     sh = L.sheet_of(ti.get("range")) if ti.get("range") else None
-    if big and (kind == "get_spreadsheet" or (kind == "get_values" and sh in set(g["sheets"]))):
+    if g.get("phase") == "input" and kind == "get_values":
+        big = True  # 입력 수집: 세션은 값을 보지 않는다. prepare.py input 이 기록에서 읽는다
+    if big and (kind == "get_spreadsheet" or (kind == "get_values" and (sh in set(g["sheets"]) or g.get("phase") == "input"))):
         s = summarize(kind, ti, resp)
         if s is not None:
             text = json.dumps(s, ensure_ascii=False)

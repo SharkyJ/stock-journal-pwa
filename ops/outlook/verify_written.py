@@ -1,4 +1,4 @@
-"""8단계 기록 검증 (결정적).
+"""6단계 기록 검증 (결정적).
 
 plan.json(plan_write.py 결과)과 훅이 남긴 커넥터 응답 원문(work/sheet_log.jsonl)을 대조한다.
 세션이 만든 파일은 읽지 않는다.
@@ -8,7 +8,7 @@ plan.json(plan_write.py 결과)과 훅이 남긴 커넥터 응답 원문(work/sh
 전망은 1~2행으로 헤더와 보관 기간도 확인한다.
 
 사용: python3 verify_written.py --plan work/plan.json
-종료 코드: 0 일치, 1 불일치 또는 재조회 부족(7단계 재시도·재조회), 2 중단(파일 오류)
+종료 코드: 0 일치, 1 불일치 또는 재조회 부족(5단계 재시도·재조회), 2 중단(파일 오류)
 """
 import argparse
 import json

@@ -2,7 +2,8 @@
 
 collect_market, collect_news, collect_calendar, collect_events 를 한 번에 실행해
 market.json, news.json, calendar.json, events.json 을 만들고,
-해석(S4)에 필요한 값만 한 줄씩 요약해 출력한다. LLM 은 이 요약만 읽고 JSON 원본은 열지 않는다.
+--digest 를 주면 해석에 필요한 값을 한 줄씩 요약해 출력한다. 기본은 상태 한 줄만 출력하고,
+세션이 읽을 작성 과제는 draft.py brief 가 만든다.
 
 사용: python3 collect.py --input work/input.json --work work
 종료 코드: 0 통과, 2 중단(입력 오류, 지수 전부 실패, 뉴스 전부 실패)
@@ -176,7 +177,7 @@ def digest(inp, market, news, cal=None, events=None, now=None):
     out += ["## 미국 지수선물"] + [quote_line(it[i]) for i in market["futures"]]
     out.append("## 경제 캘린더 (TradingView, 미국·한국, KST)")
     if cal.get("status") != "ok":
-        out.append(f"경제 캘린더 {cal.get('status')}: 일정은 4단계 웹 검색으로 보완")
+        out.append(f"경제 캘린더 {cal.get('status')}: 일정은 2단계 웹 검색으로 보완")
     else:
         if cal.get("tone"):
             tn = cal["tone"]
@@ -223,6 +224,7 @@ def main():
     ap.add_argument("--input", required=True)
     ap.add_argument("--work", required=True, help="market.json, news.json 을 쓸 폴더")
     ap.add_argument("--base", help="Worker 주소 (기본값 config.json)")
+    ap.add_argument("--digest", action="store_true", help="전체 요약 출력 (기본: 상태만. 작성 과제는 draft.py brief)")
     a = ap.parse_args()
     cfg = C.load_config()
     inp, errs = C.normalize_input(C.load_json(a.input))
@@ -240,7 +242,8 @@ def main():
     events = E.collect(inp, market, cfg)
     events["near_days"] = (cfg.get("events") or {}).get("near_days", 3)
     C.save_json(f"{a.work}/events.json", events)
-    print(digest(inp, market, news, cal, events))
+    if a.digest:
+        print(digest(inp, market, news, cal, events))
     bad = {k: v["status"] for k, v in market["items"].items() if v["status"] != "ok"}
     print(json.dumps({"ok": True, "items": len(market["items"]), "news": len(news["items"]), "calendar": cal["status"],
                       "events": len(events["order"]), "not_ok": bad},

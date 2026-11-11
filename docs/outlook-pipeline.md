@@ -14,6 +14,7 @@ P5 병행 운영        ──────────  중단 (SJ 결정: v2를
 P6 전환             ▓▓▓▓▓▓▓▓▓▓  완료
 P7 문서             ▓▓▓▓▓▓▓▓▓▓  완료
 P8 KRX Open API     ──────────  취소 (코스피200 야간선물 항목 삭제, 2026-11-09 SJ 결정)
+P9 추론 최소화      ▓▓▓▓▓▓▓▓▓▓  완료 (2026-11-11, 아래 "P9")
 ```
 
 | 단계 | 상태 | 결과·비고 |
@@ -25,6 +26,7 @@ P8 KRX Open API     ──────────  취소 (코스피200 야간�
 | P4 | 완료 | 2026-11-09 수동 실행: 일간 23행(`App_일간전망_v2`), 주간 22행(`App_전망_v2`) 기록, S7 통과. 발견 사항은 아래 "P4 수동 실행 결과" 참고, 수정 완료. 수정본 재실행(일간): S5 첫 실행 통과, 실제 재조회로 S7 통과, 근거 없는 날짜 미기재 확인 |
 | P5 | 중단 | SJ가 '예약' 화면에서 v2 두 작업 생성(일간 평일 07:23, 주간 월 06:53, Sonnet 5.5, 레포·Google Sheets 연결, 전용 환경 `stock-journal-outlook`). `Default` 환경은 Worker·RSS가 차단되어 전용 환경(허용 호스트 `sj-chart.blueinwhite.workers.dev`, `news.google.com`)을 만들어 지정. 11-09 일간 v2 수동 실행 성공(22행, S7 통과). 정기 실행은 일간 11-10, 주간 11-16부터 |
 | P6 | 완료 | 2026-11-09 SJ 결정으로 병행 비교를 중단하고 v2로 대체. v1 예약 작업 2개는 비활성화(삭제하지 않음). v2 예약 작업은 `TARGET_SHEET=App_일간전망`·`App_전망`, 영문 지침, Google Sheets 커넥터만, 전용 환경 `stock-journal-outlook`, Sonnet 5.5. 첫 정기 실행: 일간 11-10 07:23, 주간 11-16 06:53 |
+| P9 | 완료 | 2026-11-11. 모델(Opus·Haiku)과 무관하게 같은 품질을 내도록 세션 작업을 lead 문장으로 줄였다. `prepare.py`가 훅 기록의 시트 읽기로 `input.json`을 만든다(세션은 시트 값을 보지 않음, 날짜는 코드가 정함). `draft.py brief`가 행별 규칙 점수 전망·사실 문장(가격 위치, 기초자산, 컨센서스·밸류에이션, 실적 일정·직전 결과, 앱 신호 정합성, 거시 일정)·체크포인트·인용 ID를 만들고, 세션은 `notes.json`에 lead 1~2문장(숫자·날짜 금지)·근거 뉴스·선택적 ±1 조정만 쓴다. `draft.py merge`가 합쳐 기존 `build_rows.py` 검증을 그대로 통과시킨다. 스킬 단계는 8단계에서 6단계로 줄었다 |
 | P7 | 완료 | 설계 문서 진행 현황·운영 정보 정리, `ops/outlook/README.md`, `AGENTS.md` 참고 문서 링크, README 전망 설명 갱신 |
 
 ## 운영
@@ -165,9 +167,10 @@ Snyk 기사 "Top Claude Skills for Finance and Quantitative Developers"에 소�
 │   실적 발표일·경제지표 일정 등 S1·S2로 얻지 못한 정성 정보만 웹 검색
 │   결과는 ID(W1..)와 URL로 work/extra_sources.json 에 기록
 │
-├── S4 해석 작성 (LLM)
-│   market.json·news.json·extra_sources.json 만 근거로 work/analysis.json 작성
-│   수치는 입력 값만 인용, 출처는 ID로만 지정
+├── S4 해석 작성 (P9 이후: 초안은 코드, LLM 은 lead 만)
+│   draft.py brief: 규칙 점수 전망·사실 문장·체크포인트·인용 ID → work/draft.json + 작성 과제
+│   LLM: work/notes.json (행별 lead 1~2문장, 숫자·날짜 없음, 근거 뉴스 ID, 선택적 전망 ±1)
+│   draft.py merge: draft + notes → work/analysis.json
 │
 ├── S5 검증·행 조립 (결정적)         ops/outlook/build_rows.py
 │   스키마·허용값·수치·출처 ID 검사 → 결정적 필드 결합 → work/rows.json
