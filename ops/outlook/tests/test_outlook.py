@@ -114,9 +114,23 @@ class TestDraft(unittest.TestCase):
         dr = json.loads(json.dumps(DR.brief(inp, mk, nw, None, None, CFG, datetime(2026, 11, 9, 7, 25, tzinfo=C.KST))))
         notes = {"rows": {r["key"]: {"lead": "특별한 뉴스는 없다."} for r in dr["rows"]}}
         notes["rows"]["market"]["lead"] = "코스피가 5,018.85로 밀렸다."
-        notes["rows"]["KRX:005930"]["src"] = ["N1"]
+        notes["rows"]["KRX:005930"]["src"] = ["N99"]
         _, errs = DR.merge(dr, notes, CFG)
         self.assertEqual(len(errs), 2)
+        notes["rows"]["market"]["lead"] = "특별한 뉴스는 없다."
+        notes["rows"]["KRX:005930"]["src"] = ["N1"]  # 시장 뉴스는 종목 행에서도 인용 가능
+        _, errs = DR.merge(dr, notes, CFG)
+        self.assertEqual(errs, [])
+
+    def test_flat_quote_and_no_range_sentence(self):
+        import draft as DR
+        inp, mk, nw = self.fixture()
+        mk["items"]["T7"]["chg_pct"] = 0.0
+        dr = DR.brief(inp, mk, nw, None, None, CFG, datetime(2026, 11, 9, 7, 25, tzinfo=C.KST))
+        mu = " ".join(dr["rows"][3]["facts"])
+        self.assertIn("변동 없음, 시세 미갱신 가능", mu)
+        self.assertNotIn("20일 범위", " ".join(" ".join(r["facts"]) for r in dr["rows"]))
+        self.assertIn("지지 179,200", dr["rows"][1]["checkpoint"])
 
     def test_levels(self):
         import draft as DR
