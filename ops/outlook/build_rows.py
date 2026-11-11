@@ -173,18 +173,21 @@ def check_row(key, r, ctx, text_fields, value_fields):
     for w in cfg["forbidden"]:
         if w in text:
             errs.append(f"{key}: 금지 표현 '{w}'")
-    bad = [i for i in nums if (ctx.items.get(i) or {}).get("status", "ok") != "ok"]
+    used = numbers_in(text)
+    # 상태가 ok 가 아닌 값을 본문에 실제로 쓴 경우만 표기를 요구한다 (표에만 있으면 표가 상태를 보여준다)
+    bad = [i for i in nums if (ctx.items.get(i) or {}).get("status", "ok") != "ok"
+           and any(matches(v, dec, flat_numbers(ctx.items.get(i) or {})) for v, dec, _ in used)]
     if bad and "확인 못 함" not in text and "기준" not in text:
         errs.append(f"{key}: 상태가 ok 가 아닌 값({', '.join(bad)})을 인용하면 '확인 못 함' 또는 기준 시각을 적어야 함")
     s = str(r.get("summary", ""))
     if not s.strip() and "summary" in text_fields:
         errs.append(f"{key}: summary 비어 있음")
-    if len(s) > lim["summary_chars"]:
+    if lim.get("summary_chars") and len(s) > lim["summary_chars"]:
         errs.append(f"{key}: summary {len(s)}자 (최대 {lim['summary_chars']}자)")
-    if sentences(s) > lim["summary_sentences"]:
+    if lim.get("summary_sentences") and sentences(s) > lim["summary_sentences"]:
         errs.append(f"{key}: summary {sentences(s)}문장 (최대 {lim['summary_sentences']}문장)")
     for f in text_fields:
-        if f != "summary" and len(str(r.get(f, ""))) > lim["check_chars"]:
+        if f != "summary" and lim.get("check_chars") and len(str(r.get(f, ""))) > lim["check_chars"]:
             errs.append(f"{key}: {f} {len(str(r.get(f, '')))}자 (최대 {lim['check_chars']}자)")
     return errs
 
@@ -223,10 +226,14 @@ def build(inp, market, news, extra, analysis, cfg, sheet=None, cal=None, events=
     def urls(r):
         return " ".join(ctx.src[i]["url"] for i in (r.get("src") or []))
 
+    def table(r):
+        t = r.get("table") or ""
+        return t if isinstance(t, str) else json.dumps(t, ensure_ascii=False, separators=(",", ":"))
+
     def line(kind, ticker, name, r):
         if mode == "daily":
-            return [d, kind, ticker, name, r["outlook"], r["summary"], r.get("checkpoint", ""), urls(r), ts]
-        return [d, kind, ticker, name, r["s"], r["m"], r["l"], r["summary"], r.get("event", ""), urls(r), ts]
+            return [d, kind, ticker, name, r["outlook"], r["summary"], r.get("checkpoint", ""), urls(r), ts, table(r)]
+        return [d, kind, ticker, name, r["s"], r["m"], r["l"], r["summary"], r.get("event", ""), urls(r), ts, table(r)]
 
     rows = [line("시장", "", "시장 전체", rows_in["market"])]
     for kind, lst in (("보유", inp["holdings"]), ("관심", inp["watch"])):

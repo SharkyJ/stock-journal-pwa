@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-MZnbbkPpBnUFKzWeQ1v1rd3NfnE66b5WbyXM/HCzol0=' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; connect-src https://sheets.googleapis.com https://www.googleapis.com https://oauth2.googleapis.com https://accounts.google.com/gsi/ https://*.workers.dev https://script.google.com https://script.googleusercontent.com; frame-src https://accounts.google.com/gsi/; img-src 'self' data:; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-uCAYHk/FGQ1N2bJCUUlH0weJkABlsY2SUz+SjrsG4tc=' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; connect-src https://sheets.googleapis.com https://www.googleapis.com https://oauth2.googleapis.com https://accounts.google.com/gsi/ https://*.workers.dev https://script.google.com https://script.googleusercontent.com; frame-src https://accounts.google.com/gsi/; img-src 'self' data:; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
 <meta name="robots" content="noindex,nofollow">
 <meta name="theme-color" content="#0b0f17">
@@ -197,6 +197,7 @@ nav.bot button.on{color:var(--tx)}
 .rbar .mkr.cur em{top:26px;color:var(--ac);font-weight:700}
 .sect{font-size:13px;font-weight:700;color:var(--tx2);margin:18px 2px 6px}
 .tbl{width:100%;border-collapse:collapse;font-size:13px}
+.ol-tbl{font-size:12px;margin-top:2px}.ol-tbl th,.ol-tbl td{white-space:nowrap}
 .tbl th{font-size:11.5px;color:var(--tx3);font-weight:600;text-align:right;padding:6px 4px;border-bottom:1px solid var(--line)}
 .tbl th:first-child,.tbl td:first-child{text-align:left}
 .tbl td{text-align:right;padding:9px 4px;border-bottom:1px solid var(--line);white-space:nowrap}
@@ -237,7 +238,7 @@ code{background:var(--bg2);padding:1px 5px;border-radius:5px;font-size:12.5px}
 <script>
 'use strict';
 /* ================= 상수 / 유틸 ================= */
-const VERSION='1.11.1';
+const VERSION='1.12.0';
 const SH='https://sheets.googleapis.com/v4/spreadsheets';
 const SHEETS_SCOPE='https://www.googleapis.com/auth/spreadsheets';
 const SCOPES=SHEETS_SCOPE+' openid email';
@@ -249,14 +250,14 @@ const HDR={
   review:['거래키','시장','종목탭','거래일자','구분','수량','단가','전략태그','감정','회고','평점','작성일'],
   snap:['일자','투자원금(KRW)','총평가자산(KRW)','총손익(KRW)','수익률','국장 총평가(KRW)','미장 총평가(USD)','예수금(KRW환산)','환율(USD/KRW)','국장 원금(KRW)','미장 원금(USD)','기록시각'],
   watch:['티커','종목명','시장','메모','추가일'],
-  outlook:['작성일','구분','티커','종목명','단기','중기','장기','요약','근거·이벤트','출처','작성시각'],
-  daily:['작성일','구분','티커','종목명','오늘 전망','요약','체크포인트','출처','작성시각'],
+  outlook:['작성일','구분','티커','종목명','단기','중기','장기','요약','근거·이벤트','출처','작성시각','지표'],
+  daily:['작성일','구분','티커','종목명','오늘 전망','요약','체크포인트','출처','작성시각','지표'],
   event:['ID','버전','구분','일시','대상','종목명','제목','중요도','상태','예상','이전','실제','판정','점수','세부','출처','갱신시각'],
   signal:['키','신호일','시장','티커','종목명','구분','전략','신호','근거','가격','기준 심볼','기록시각'],
   inbox:['키','수신시각','증권사','계좌구분','유형','거래일자','티커','종목명','수량','단가','수수료·세금','원화금액','달러금액','환율','통화','상태','반영위치','원본요약'],
   fin:['키','일자','시장','티커','종목명','현재가','실적 PER','12개월 선행 PER','포워드 PER','실적 EPS','12개월 선행 EPS','올해 회계연도 말','올해 추정 EPS','내년 회계연도 말','내년 추정 EPS','목표주가','투자의견(5=강력매수)','출처','기록시각']
 };
-const HCOL={plan:'I',review:'L',snap:'L',watch:'E',outlook:'K',daily:'I',signal:'L',fin:'S',inbox:'R',event:'Q'};
+const HCOL={plan:'I',review:'L',snap:'L',watch:'E',outlook:'L',daily:'J',signal:'L',fin:'S',inbox:'R',event:'Q'};
 const MKL={KR:'국장',US:'미장'};
 const MCCY={KR:'KRW',US:'USD'};
 const DEF_ACC={KR:['메리츠증권','메리츠 RIA','토스증권','토스 RIA'],US:['메리츠증권','토스증권']};
@@ -499,9 +500,9 @@ function buildData(raw){
   const mktOf=t=>/^(KRX|KOSDAQ|KOSPI):/.test(t)||/^\d{6}$/.test(t)?'KR':'US';
   D.watch=(raw.watch||[]).map((r,i)=>{const t=str(r[0]).toUpperCase(),m=str(r[2]);return {row:i+2,ticker:t,name:str(r[1]),mkt:m==='국장'?'KR':m==='미장'?'US':mktOf(t),memo:str(r[3])}}).filter(w=>w.ticker);
   D.wByKey={};D.watch.forEach(w=>{const k='관심_'+w.ticker;D.wByKey[k]={key:k,watch:true,mkt:w.mkt,ccy:MCCY[w.mkt],ticker:w.ticker,name:w.name||w.ticker.split(':').pop(),tab:w.name||w.ticker,sheetId:'w'+w.row,qty:0,avg:0,price:0,trades:[],active:false,memo:w.memo}});
-  const ol=(raw.outlook||[]).map((r,i)=>({row:i+2,date:toSerial(r[0]),kind:str(r[1]),ticker:str(r[2]).toUpperCase(),name:str(r[3]),s:str(r[4]),m:str(r[5]),l:str(r[6]),sum:str(r[7]),ev:str(r[8]),src:str(r[9]),at:r[10]})).filter(o=>o.date);
+  const ol=(raw.outlook||[]).map((r,i)=>({row:i+2,date:toSerial(r[0]),kind:str(r[1]),ticker:str(r[2]).toUpperCase(),name:str(r[3]),s:str(r[4]),m:str(r[5]),l:str(r[6]),sum:str(r[7]),ev:str(r[8]),src:str(r[9]),at:r[10],tbl:str(r[11])})).filter(o=>o.date);
   const ld=ol.length?Math.max(...ol.map(o=>o.date)):0;D.outlook={date:ld,rows:ol.filter(o=>o.date===ld)};D.outlook.at=olAt(D.outlook.rows);
-  const dl=(raw.daily||[]).map((r,i)=>({row:i+2,date:toSerial(r[0]),kind:str(r[1]),ticker:str(r[2]).toUpperCase(),name:str(r[3]),v:str(r[4]),sum:str(r[5]),chk:str(r[6]),src:str(r[7]),at:r[8]})).filter(o=>o.date);
+  const dl=(raw.daily||[]).map((r,i)=>({row:i+2,date:toSerial(r[0]),kind:str(r[1]),ticker:str(r[2]).toUpperCase(),name:str(r[3]),v:str(r[4]),sum:str(r[5]),chk:str(r[6]),src:str(r[7]),at:r[8],tbl:str(r[9])})).filter(o=>o.date);
   const dd=dl.length?Math.max(...dl.map(o=>o.date)):0;D.daily={date:dd,rows:dl.filter(o=>o.date===dd)};D.daily.at=olAt(D.daily.rows);
   D.events=(raw.event||[]).map((r,i)=>evParse(r,i+2)).filter(o=>o.id&&o.day);
   D.signals=(raw.signal||[]).map((r,i)=>sigParse(r,i+2)).filter(o=>o.key&&o.date);D.sigKeys=new Set(D.signals.map(o=>o.key));
@@ -1195,6 +1196,10 @@ function spark(X,n,sign){const c=X.c.slice(-n),m=X.ma200.slice(-n);if(c.length<2
   const x=i=>i/(c.length-1)*W,y=v=>H-2-(v-lo)/((hi-lo)||1)*(H-4);const d=a=>a.map((v,i)=>v==null?'':`${i&&a[i-1]!=null?'L':'M'}${x(i).toFixed(1)} ${y(v).toFixed(1)}`).join('');
   const up=(c[c.length-1]>=c[0])===(sign>0);return `<svg class="spk" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true"><path d="${d(m)}" fill="none" stroke="var(--tx3)" stroke-dasharray="3 3" stroke-width="1"/><path d="${d(c)}" fill="none" stroke="${up?'var(--up)':'var(--dn)'}" stroke-width="1.6"/></svg>`}
 const OLV=t=>{t=str(t);return /^(강세|강한 상승|상승 우위|매우 긍정)/.test(t)?2:/^(약강세|약한 상승|긍정|우호)/.test(t)?1:/^(약세|하락 우위|매우 부정)/.test(t)?-2:/^(약약세|약한 하락|부정|경계)/.test(t)?-1:0};
+// 전망 지표 표: 시트 '지표' 열의 JSON([{title,cols,rows}])을 그대로 표로 보여준다(파이프라인 코드가 생성)
+function olTbl(j){let T;try{T=JSON.parse(j||'[]')}catch(e){return ''}if(!Array.isArray(T)||!T.length)return '';
+  const td=c=>{c=str(c);const m=/^[+\-−]?\d[\d,.]*%/.test(c)?parseFloat(c.replace(/[,−]/g,m=>m==='−'?'-':'')):null;return `<td class="${/^[+\-−]?\d/.test(c)?'num ':''}${m==null?'':cls(m)}">${esc(c)}</td>`};
+  return T.filter(t=>t&&Array.isArray(t.rows)&&t.rows.length).map(t=>`<div class="xs muted" style="margin-top:8px">${esc(t.title||'')}</div><div class="scrollx"><table class="tbl ol-tbl"><thead><tr>${(t.cols||[]).map(c=>`<th>${esc(c)}</th>`).join('')}</tr></thead><tbody>${t.rows.map(r=>`<tr>${r.map(td).join('')}</tr>`).join('')}</tbody></table></div>`).join('')}
 const olLink=t=>esc(t).replace(/https:\/\/[^\s<>"']+/g,u=>`<a href="${u}" target="_blank" rel="noopener noreferrer">${u.replace(/^https:\/\/(www\.)?/,'').slice(0,40)}…</a>`);
 function vOut(){const ok=S.v.ok||'d';return `<div style="margin-top:12px">${seg('ok',[['d','일간 (평일 아침)'],['w','주간 (월요일)']],'full')}</div>${ok==='w'?vOutW():vOutD()}`}
 function olEmpty(t,k,when,cols){return S.D.has[k]?`<section class="card"><h2>${t}</h2><div class="empty">아직 리포트가 없습니다.<br>${when} Claude가 작성합니다.</div></section>`
@@ -1202,7 +1207,7 @@ function olEmpty(t,k,when,cols){return S.D.has[k]?`<section class="card"><h2>${t
 function vOutD(){const D=S.D,O=D.daily;if(!D.has.daily||!O.rows.length)return olEmpty('Claude 일간 전망','daily','평일(월~금) 아침 07:18에','오늘 전망·체크포인트');
   const card=o=>`<div class="olc"><div class="row sb" style="align-items:flex-start;gap:8px"><div style="min-width:0"><b>${esc(o.name||o.ticker||o.kind)}</b> ${o.kind&&o.kind!=='시장'?`<i class="badge">${esc(o.kind)}</i>`:''}<div class="xs faint">${esc(o.ticker)}</div></div>
      <div class="hz">${hzChip('오늘',OLV(o.v))}</div></div><div class="xs muted" style="margin-top:4px">오늘 ${esc(o.v||'-')}</div>
-     ${o.sum?`<div class="sm" style="margin-top:6px;white-space:pre-wrap">${esc(o.sum)}</div>`:''}${o.chk?`<div class="xs muted" style="margin-top:6px;white-space:pre-wrap">체크포인트 · ${olLink(o.chk)}</div>`:''}${o.src?`<div class="xs faint" style="margin-top:4px;word-break:break-all">${olLink(o.src)}</div>`:''}</div>`;
+     ${o.sum?`<div class="sm" style="margin-top:6px;white-space:pre-wrap">${esc(o.sum)}</div>`:''}${olTbl(o.tbl)}${o.chk?`<div class="xs muted" style="margin-top:6px;white-space:pre-wrap">체크포인트 · ${olLink(o.chk)}</div>`:''}${o.src?`<div class="xs faint" style="margin-top:4px;word-break:break-all">${olLink(o.src)}</div>`:''}</div>`;
   const mk=O.rows.filter(o=>o.kind==='시장'),rest=O.rows.filter(o=>o.kind!=='시장');
   return `<section class="card"><h2>Claude 일간 전망 <span class="xs faint">${olWhen(O)} 작성</span></h2>${mk.map(card).join('')||'<div class="xs faint">시장 요약 없음</div>'}</section>
    ${rest.length?`<section class="card" style="padding-top:8px">${rest.map(card).join('')}</section>`:''}
@@ -1211,7 +1216,7 @@ function vOutW(){const D=S.D,O=D.outlook;if(!D.has.outlook||!O.rows.length)retur
   const card=o=>`<div class="olc"><div class="row sb" style="align-items:flex-start;gap:8px"><div style="min-width:0"><b>${esc(o.name||o.ticker||o.kind)}</b> ${o.kind&&o.kind!=='시장'?`<i class="badge">${esc(o.kind)}</i>`:''}<div class="xs faint">${esc(o.ticker)}</div></div>
      <div class="hz">${hzChip('단',OLV(o.s))+hzChip('중',OLV(o.m))+hzChip('장',OLV(o.l))}</div></div>
      <div class="xs muted" style="margin-top:4px">단기 ${esc(o.s||'-')} · 중기 ${esc(o.m||'-')} · 장기 ${esc(o.l||'-')}</div>
-     ${o.sum?`<div class="sm" style="margin-top:6px;white-space:pre-wrap">${esc(o.sum)}</div>`:''}${o.ev?`<div class="xs muted" style="margin-top:6px;white-space:pre-wrap">${olLink(o.ev)}</div>`:''}${o.src?`<div class="xs faint" style="margin-top:4px;word-break:break-all">${olLink(o.src)}</div>`:''}</div>`;
+     ${o.sum?`<div class="sm" style="margin-top:6px;white-space:pre-wrap">${esc(o.sum)}</div>`:''}${olTbl(o.tbl)}${o.ev?`<div class="xs muted" style="margin-top:6px;white-space:pre-wrap">${olLink(o.ev)}</div>`:''}${o.src?`<div class="xs faint" style="margin-top:4px;word-break:break-all">${olLink(o.src)}</div>`:''}</div>`;
   const mk=O.rows.filter(o=>o.kind==='시장'),rest=O.rows.filter(o=>o.kind!=='시장');
   return `<section class="card"><h2>Claude 주간 전망 <span class="xs faint">${olWhen(O)} 작성</span></h2>${mk.map(card).join('')}</section>
    ${rest.length?`<section class="card" style="padding-top:8px">${rest.map(card).join('')}</section>`:''}
@@ -2383,16 +2388,17 @@ const Demo=(()=>{
   function mkTab(id,name,ticker,trades){const c=[['종목명',name,'평가 손익','=B7-B6'],['티커',ticker,'수익률 %','=IF(B6=0, 0, D1/B6)'],['현재가',`=IFERROR(GOOGLEFINANCE(B2, "price"), ${PR[ticker]||0})`,'누적 실현손익','=SUM(I9:I)'],['보유 수량','=SUMIFS(C9:C,B9:B,"매수")-SUMPRODUCT((B9:B="매도")*ABS(C9:C))'],['평균 매수단가','=IFERROR(INDEX(H:H, MAX(FILTER(ROW(H9:H), H9:H<>""))), 0)'],['총 매수금액','=B4*B5'],['현재 평가금액','=B4*B3'],['거래일자','구분','수량','거래단가','수수료/세금','정산금액','보유수량 변화','평단가 변화','실현손익','계좌구분','메모']];
     trades.forEach((t,i)=>{const n=9+i;c.push([toSerial(t[0]),t[1],t[2],t[3],t[4],...F(n),t[5],t[6]])});for(let n=9+trades.length;n<=30;n++)c.push(['','','','','',...F(n)]);return {id,title:'',cells:c}}
   function reset(){wb=null}
+  const DEMO_TBL=JSON.stringify([{title:'시세·이동평균',cols:['항목','현재가','등락','20일선 대비','60일선 대비','200일선 대비','20일 범위'],rows:[['데모 종목','72,400','+1.12%','+2.30%','-4.10%','+8.70%','68,900~75,200']]},{title:'컨센서스·밸류에이션·실적',cols:['항목','값'],rows:[['EPS 추정치 변화(30일)','+3.20%'],['다음 실적','데모 (예상)']]}]);
   function demoDaily(){const t=toSerial(todayStr()),dow=new Date().getDay(),d=dow===0?t-2:dow===6?t-1:t;
     return [[d,'시장','','시장 전체','약강세','데모 리포트입니다. 간밤 미국 반도체주 강세로 국내 반도체 업종 출발이 우호적일 수 있습니다.','오늘: 국내 수출 잠정치 발표 · 원/달러 1,380원선','데모 데이터'],
       [d,'보유','KRX:900101','한빛반도체','약강세','미국 메모리 업체 실적 호조 영향. 20일선(약 7만 원) 지지 여부 확인.','지지 70,000 · 저항 74,000','데모 데이터'],
       [d,'보유','NASDAQ:NVDA','NVDA','중립','특별한 뉴스 없음. 직전 고점 부근 매물 소화 구간.','이번 주 신제품 발표 예정(데모)','데모 데이터'],
-      [d,'관심','NASDAQ:AMD','AMD','약약세','경쟁사 가격 인하 보도. 60일선 아래 약세 지속.','','데모 데이터']].map(r=>[...r,sToStr(d)+' 07:26'])}
+      [d,'관심','NASDAQ:AMD','AMD','약약세','경쟁사 가격 인하 보도. 60일선 아래 약세 지속.','','데모 데이터']].map((r,i)=>[...r,sToStr(d)+' 07:26',i?DEMO_TBL:''])}
   function demoOutlook(){const t=toSerial(todayStr()),dow=new Date().getDay(),mon=t-((dow+6)%7);
     return [[mon,'시장','','시장 전체','중립','약강세','강세','데모 리포트입니다. 반도체 업황 회복 기대가 이어지지만 단기 급등 뒤 변동성이 커진 구간입니다.','이번 주: 미국 소비자물가 발표, 주요 반도체 기업 실적 발표','데모 데이터'],
       [mon,'보유','KRX:900101','한빛반도체','약강세','강세','강세','HBM 수요 확대로 이익 추정치가 오르는 중. 단기는 20일선 지지 여부 확인.','실적 발표 예정(데모)','데모 데이터'],
       [mon,'보유','NASDAQ:NVDA','NVDA','중립','약강세','강세','데이터센터 수요는 견조, 밸류에이션 부담으로 단기 등락 가능.','','데모 데이터'],
-      [mon,'관심','NASDAQ:AMD','AMD','약약세','중립','약강세','신제품 출시 전 관망 구간. 60일선 회복 여부가 관건.','','데모 데이터']].map(r=>[...r,sToStr(mon)+' 06:58'])}
+      [mon,'관심','NASDAQ:AMD','AMD','약약세','중립','약강세','신제품 출시 전 관망 구간. 60일선 회복 여부가 관건.','','데모 데이터']].map((r,i)=>[...r,sToStr(mon)+' 06:58',i?DEMO_TBL:''])}
   function demoEvents(){const t=toSerial(todayStr()),D=k=>sToStr(t+k),up="'"+sToStr(t)+' 07:26';
     const E=(id,kind,at,tg,nm,ti,imp,st,fc,pv,ac,vd,sc,sub,src)=>[id,'v'+id.length,kind,at,tg,nm,ti,imp,st,fc,pv,ac,vd,sc,sub,src,up];
     return [E('TV-d1','경제',D(-3)+' 22:30','미국','','비농업 고용 (Non Farm Payrolls)','높음','발표','65','60','165','혼조',0.3,'기간 데모 · 예상 상회 (발표 165 vs 예상 65) — 성장 호조이나 금리인하 지연 가능(매파)','https://www.bls.gov/'),

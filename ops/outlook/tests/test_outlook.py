@@ -94,7 +94,10 @@ class TestDraft(unittest.TestCase):
         sam = dr["rows"][1]
         self.assertIn("앱 신호: 11/6 추세추종 매도·경계", sam["checkpoint"])
         self.assertIn("레버리지 3배", dr["rows"][2]["checkpoint"])
-        self.assertIn("기초자산 필라델피아 반도체", " ".join(dr["rows"][2]["facts"]))
+        self.assertIn("기초자산 필라델피아 반도체", [x[0] for x in dr["rows"][2]["table"][0]["rows"]])
+        self.assertEqual(dr["rows"][1]["table"][0]["rows"][0][:3], ["삼성전자", "189,900", "+0.64%"])
+        self.assertEqual(dr["rows"][1]["table"][0]["rows"][0][6], "179,200~249,000")
+        self.assertIn(["EPS 추정치 변화(30일)", "+8.56%"], dr["rows"][1]["table"][1]["rows"])
         self.assertIn(sam["outlook"], CFG["outlook_values"])
         notes = {"rows": {r["key"]: {"lead": "반도체 강세가 이어졌다"} for r in dr["rows"]}}
         notes["rows"]["NASDAQ:MU"]["adjust"] = 1
@@ -106,29 +109,38 @@ class TestDraft(unittest.TestCase):
         self.assertEqual(an["rows"][3]["outlook"], DR.shift(dr["rows"][3]["outlook"], 1))
         res, errs = B.build(inp, mk, nw, {"items": []}, an, CFG, now=now)
         self.assertEqual(errs, [])
-        self.assertTrue(res["rows"][1][5].startswith("반도체 강세가 이어졌다. 삼성전자는 189,900"))
+        self.assertTrue(res["rows"][1][5].startswith("반도체 강세가 이어졌다."))
+        tab = json.loads(res["rows"][1][9])  # 지표 열: 앱이 그대로 표로 보여준다
+        self.assertEqual(tab[0]["cols"][0], "항목")
 
-    def test_merge_rejects_numbers_in_lead(self):
+    def test_lead_rules(self):
         import draft as DR
         inp, mk, nw = self.fixture()
-        dr = json.loads(json.dumps(DR.brief(inp, mk, nw, None, None, CFG, datetime(2026, 11, 9, 7, 25, tzinfo=C.KST))))
+        now = datetime(2026, 11, 9, 7, 25, tzinfo=C.KST)
+        dr = json.loads(json.dumps(DR.brief(inp, mk, nw, None, None, CFG, now)))
         notes = {"rows": {r["key"]: {"lead": "특별한 뉴스는 없다."} for r in dr["rows"]}}
-        notes["rows"]["market"]["lead"] = "코스피가 5,018.85로 밀렸다."
         notes["rows"]["KRX:005930"]["src"] = ["N99"]
+        notes["rows"]["NASDAQ:MU"]["lead"] = "가. " * 9
         _, errs = DR.merge(dr, notes, CFG)
-        self.assertEqual(len(errs), 2)
-        notes["rows"]["market"]["lead"] = "특별한 뉴스는 없다."
+        self.assertEqual(len(errs), 2)  # 없는 src, 8문장 초과
         notes["rows"]["KRX:005930"]["src"] = ["N1"]  # 시장 뉴스는 종목 행에서도 인용 가능
-        _, errs = DR.merge(dr, notes, CFG)
+        notes["rows"]["NASDAQ:MU"]["lead"] = "특별한 뉴스는 없다."
+        notes["rows"]["KRX:005930"]["lead"] = "삼성전자는 189,900원으로 20일선 대비 -12.75% 아래에 있다. 반등 확인이 필요하다."
+        an, errs = DR.merge(dr, notes, CFG)
         self.assertEqual(errs, [])
+        _, errs = B.build(inp, mk, nw, {"items": []}, an, CFG, now=now)
+        self.assertEqual(errs, [])  # 표에 있는 수치는 lead 에 쓸 수 있다
+        notes["rows"]["KRX:005930"]["lead"] = "삼성전자는 123,456원이다."
+        an, _ = DR.merge(dr, notes, CFG)
+        _, errs = B.build(inp, mk, nw, {"items": []}, an, CFG, now=now)
+        self.assertTrue(any("123,456" in e for e in errs))  # 근거 없는 수치는 여전히 거부
 
     def test_flat_quote_and_no_range_sentence(self):
         import draft as DR
         inp, mk, nw = self.fixture()
         mk["items"]["T7"]["chg_pct"] = 0.0
         dr = DR.brief(inp, mk, nw, None, None, CFG, datetime(2026, 11, 9, 7, 25, tzinfo=C.KST))
-        mu = " ".join(dr["rows"][3]["facts"])
-        self.assertIn("변동 없음, 시세 미갱신 가능", mu)
+        self.assertEqual(dr["rows"][3]["table"][0]["rows"][0][2], "미갱신")
         self.assertNotIn("20일 범위", " ".join(" ".join(r["facts"]) for r in dr["rows"]))
         self.assertIn("지지 179,200", dr["rows"][1]["checkpoint"])
 
@@ -264,7 +276,7 @@ class TestBuild(unittest.TestCase):
         a["rows"].append({"key": "night", "outlook": "중립", "summary": "x"})
         _, errs = self.build(a)
         joined = "\n".join(errs)
-        for s in ("NASDAQ:MU: analysis 에 행이 없음", "'5,123.45'", "금지 표현", "9문장", "허용값", "N9", "입력에 없는 행: NIGHT"):
+        for s in ("NASDAQ:MU: analysis 에 행이 없음", "'5,123.45'", "금지 표현", "허용값", "N9", "입력에 없는 행: NIGHT"):
             self.assertIn(s, joined)
 
     def test_stale_needs_note(self):
@@ -310,8 +322,8 @@ class TestWeekly(unittest.TestCase):
         res, errs = B.build(i, market_fixture(), news_fixture(), ex, a, CFG)
         self.assertEqual(errs, [])
         self.assertEqual(res["sheet"], "App_전망")
-        self.assertEqual(len(res["header"]), 11)
-        self.assertEqual([len(r) for r in res["rows"]], [11] * 4)
+        self.assertEqual(len(res["header"]), 12)
+        self.assertEqual([len(r) for r in res["rows"]], [12] * 4)
         self.assertEqual(res["rows"][0][4:7], ["중립", "약강세", "강세"])
         self.assertEqual(res["delete_before"], "2026-08-17")
 
@@ -347,8 +359,8 @@ class TestPlanVerify(unittest.TestCase):
 
     def test_written_at_column(self):
         r = self.rows()
-        self.assertEqual(r["header"][-1], "작성시각")
-        self.assertEqual(r["rows"][0][-1], "2026-11-09 07:25")
+        self.assertEqual(r["header"][-2:], ["작성시각", "지표"])
+        self.assertEqual(r["rows"][0][-2], "2026-11-09 07:25")
 
     def test_plan_deletes_today_and_old(self):
         r = self.rows()
@@ -358,7 +370,7 @@ class TestPlanVerify(unittest.TestCase):
         self.assertEqual([x["deleteDimension"]["range"]["startIndex"] for x in p["requests"]], [4, 1])
         self.assertEqual([x["deleteDimension"]["range"]["endIndex"] for x in p["requests"]], [6, 3])
         self.assertEqual(p["expect"]["start"], 3)  # 헤더 + 10-20 한 행 남음
-        self.assertEqual(p["readback"], ["'App_일간전망'!A1:I2", f"'App_일간전망'!A3:I{2 + len(r['rows'])}"])
+        self.assertEqual(p["readback"], ["'App_일간전망'!A1:J2", f"'App_일간전망'!A3:J{2 + len(r['rows'])}"])
         self.assertIsNone(p["header_update"])
         head = {"range": "'App_일간전망'!A1:Z1", "values": [r["header"][:8]]}
         self.assertTrue(W.plan(r, 77, self.cola(dates), head)["header_update"])  # 작성시각 열 추가
@@ -372,12 +384,12 @@ class TestPlanVerify(unittest.TestCase):
 
     def responses(self, p, mutate=None):
         vals = [list(x) for x in p["append"]["values"]]
-        app = {"updates": {"updatedRange": f"'{p['sheet']}'!A{p['expect']['start']}:I{p['expect']['end']}",
+        app = {"updates": {"updatedRange": f"'{p['sheet']}'!A{p['expect']['start']}:J{p['expect']['end']}",
                            "updatedRows": p["expect"]["rows"]}}
         rb1 = {"range": p["readback"][0], "values": [p["header"], ["2026-10-20", "시장", "", "시장 전체", "중립"]]}
         body = [list(x) for x in vals]
         body[0][0] = "2026. 11. 9"
-        body[0][-1] = "2026. 11. 9 오전 7:25:00"  # 시트가 날짜·시각으로 바꿔 보여준 경우
+        body[0][-2] = "2026. 11. 9 오전 7:25:00"  # 시트가 날짜·시각으로 바꿔 보여준 경우
         if mutate:
             mutate(body)
         rb2 = {"range": p["readback"][1], "values": body}
