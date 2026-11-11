@@ -28,7 +28,7 @@ NEWS_PER_ROW = 4
 MARKET_ORDER = {"daily": ["us", "fut", "upcoming", "recent", "rf", "kospi", "tone"],
                 "weekly": ["us", "kospi", "recent", "tone", "upcoming", "rf", "fut"]}
 # 요약에 남기는 서술형 사실(수치는 지표 표로 간다)
-SUMMARY_KINDS = {"tone", "signal"}
+SUMMARY_KINDS = set()  # 요약은 lead 만. 거시 기조는 시장 표, 앱 신호 정합성은 체크포인트로 간다(lead 와 중복 방지)
 # 사실 문장 순서(작성 과제·요약) (길이 한도를 넘으면 뒤에서부터 뺀다)
 FACT_ORDER = {"daily": ["price", "under", "next", "signal", "cons", "last"],
               "weekly": ["price", "cons", "next", "under", "signal", "last"]}
@@ -318,6 +318,10 @@ def market_table(ctx):
     rows = [quote_cells(ctx, ctx.it[i]) for i in ctx.market.get("indices", []) + ctx.market.get("futures", [])
             if ok(ctx.it.get(i))]
     tabs = [{"title": "지수·환율·금리·선물", "cols": QUOTE_COLS, "rows": rows}]
+    tn = ctx.cal.get("tone") or {}
+    if tn.get("tone"):
+        tabs.append({"title": "거시 기조", "cols": ["판정", "근거", "주요 지표"],
+                     "rows": [[tn["tone"], tn.get("label") or "", ", ".join(x.lstrip("·") for x in tn.get("drivers") or [])]]})
     ev = []
     for o in cal_recent(ctx) + cal_today(ctx):
         ev.append([f"{md(o['at'][:10])} {o['at'][11:16]}", K_COUNTRY.get(o["country"], o["country"]),
@@ -463,7 +467,12 @@ def ticker_row(ctx, t, mkt_score):
         ck = [f"지지 {fmt(o['lo20'])}", f"저항 {fmt(o['hi20'])}"] + \
              ([f"20일선 {fmt(o['ma20'])}"] if o.get("ma20") is not None else []) + ck
     if sigs:
-        ck.append("앱 신호: " + ", ".join(sig_text(s) for s in sigs[:2]))
+        fit_txt = ""
+        d0 = sig_dir(sigs[0])
+        mv0 = base.get("vs_ma20_pct") if base.get("vs_ma20_pct") is not None else (None if flat(base) else base.get("chg_pct"))
+        if d0 and mv0 is not None:
+            fit_txt = "(가격 흐름과 일치)" if (d0 > 0) == (mv0 > 0) else "(가격 흐름과 엇갈림)"
+        ck.append("앱 신호: " + ", ".join(sig_text(s) for s in sigs[:2]) + fit_txt)
     if lev:
         ck.append(f"레버리지 {lev}배: 변동성 손실 위험")
     order = FACT_ORDER["daily" if ctx.daily else "weekly"]
