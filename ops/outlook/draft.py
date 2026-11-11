@@ -20,13 +20,16 @@ from datetime import datetime, timedelta
 
 import build_rows as B
 import collect as D
+from collect_calendar import COUNTRY_KO as K_COUNTRY
 import common as C
 
 LEVELS = ["약세", "약약세", "중립", "약강세", "강세"]
 NEWS_PER_ROW = 4
 MARKET_ORDER = {"daily": ["us", "fut", "upcoming", "recent", "rf", "kospi", "tone"],
                 "weekly": ["us", "kospi", "recent", "tone", "upcoming", "rf", "fut"]}
-# 요약 문장 우선순위 (길이 한도를 넘으면 뒤에서부터 뺀다)
+# 요약에 남기는 서술형 사실(수치는 지표 표로 간다)
+SUMMARY_KINDS = {"tone", "signal"}
+# 사실 문장 순서(작성 과제·요약) (길이 한도를 넘으면 뒤에서부터 뺀다)
 FACT_ORDER = {"daily": ["price", "under", "next", "signal", "cons", "last"],
               "weekly": ["price", "cons", "next", "under", "signal", "last"]}
 
@@ -271,18 +274,98 @@ def market_row(ctx):
     if tone:
         add("tone", f"거시 기조는 {tone}{cop(tone)}.")
     order = MARKET_ORDER["daily" if ctx.daily else "weekly"]
-    facts = [f for _, f in sorted(zip(kinds, facts), key=lambda x: order.index(x[0]))]
+    pairs = sorted(zip(kinds, facts), key=lambda x: order.index(x[0]))
+    context = [f for _, f in pairs]
+    facts = [f for k, f in pairs if k in SUMMARY_KINDS]
     ck = []
     for o in up[:3]:
         s = f"{md(o['at'][:10])} {o['at'][11:16]} {o['title_ko'] or o['title']}"
         if o.get("forecast"):
             s += f" 예상 {o['forecast']}"
         ck.append(s)
-    if ok(ks) and ks.get("lo20") is not None and ks.get("hi20") is not None:
-        ck.append(f"코스피 20일 범위 {fmt(ks['lo20'])}~{fmt(ks['hi20'])}")
-    return {"key": "market", "name": "시장 전체", "score": score, "why": why, "facts": facts,
+    # 지표 표에 나오는 지수·선물 값은 lead 에서 인용할 수 있다
+    nums += [i for i in ctx.market.get("indices", []) + ctx.market.get("futures", []) if ok(ctx.it.get(i))]
+    nums += [o["id"] for o in cal_recent(ctx) + up]
+    return {"key": "market", "name": "시장 전체", "score": score, "why": why, "facts": facts, "context": context,
+            "table": market_table(ctx),
             "checkpoint": " · ".join(ck), "nums": list(dict.fromkeys(nums)), "news": news_for(ctx, "market"),
             "auto_src": [n["id"] for n in news_for(ctx, "market")[:2]]}
+
+
+# ---------- 지표 표 (코드가 만들고 시트 '지표' 열에 JSON 으로 기록, 앱이 그대로 표로 보여준다) ----------
+
+def _p(v):
+    return "" if v is None else pct(v)
+
+
+def _v(v):
+    return "" if v is None else fmt(v)
+
+
+def quote_cells(ctx, o, name=None):
+    rng = f"{fmt(o['lo20'])}~{fmt(o['hi20'])}" if o.get("lo20") is not None and o.get("hi20") is not None else ""
+    c = "미갱신" if flat(o) else _p(o.get("chg_pct"))
+    if o.get("status") not in (None, "ok"):
+        c += f" ({o['status']})"
+    return [name or lab(ctx, o), _v(o.get("value")), c, _p(o.get("vs_ma20_pct")), _p(o.get("vs_ma60_pct")),
+            _p(o.get("vs_ma200_pct")), rng]
+
+
+QUOTE_COLS = ["항목", "현재가", "등락", "20일선 대비", "60일선 대비", "200일선 대비", "20일 범위"]
+
+
+def market_table(ctx):
+    rows = [quote_cells(ctx, ctx.it[i]) for i in ctx.market.get("indices", []) + ctx.market.get("futures", [])
+            if ok(ctx.it.get(i))]
+    tabs = [{"title": "지수·환율·금리·선물", "cols": QUOTE_COLS, "rows": rows}]
+    ev = []
+    for o in cal_recent(ctx) + cal_today(ctx):
+        ev.append([f"{md(o['at'][:10])} {o['at'][11:16]}", K_COUNTRY.get(o["country"], o["country"]),
+                   o["title_ko"] or o["title"], o.get("forecast") or "", o.get("previous") or "",
+                   o.get("actual") or "", o["label"] if o["released"] else "예정"])
+    if ev:
+        tabs.append({"title": "고영향 경제 지표", "cols": ["일시", "국가", "지표", "예상", "이전", "실제", "판정"], "rows": ev})
+    return tabs
+
+
+def ticker_table(ctx, t, o, u, nxt, last):
+    rows = []
+    if ok(o):
+        rows.append(quote_cells(ctx, o, t["name"]))
+    if u and ok(u):
+        rows.append(quote_cells(ctx, u, "기초자산 " + ulabel(ctx, u)))
+    tabs = [{"title": "시세·이동평균", "cols": QUOTE_COLS, "rows": rows}] if rows else []
+    f = []
+    if o.get("eps_rev_pct") is not None:
+        f.append([f"EPS 추정치 변화({o.get('eps_rev_days')}일)", _p(o["eps_rev_pct"])])
+    if o.get("tgt_chg_pct") is not None:
+        f.append([f"목표주가 변화({o.get('tgt_chg_days')}일)", _p(o["tgt_chg_pct"])])
+    if o.get("target") is not None:
+        f.append(["목표주가(여력)", f"{fmt(o['target'])} ({_p(o.get('tgt_upside_pct'))})"])
+    for k, lb in (("per", "PER"), ("ntm_per", "12개월 선행 PER"), ("fwd_per", "포워드 PER")):
+        if o.get(k) is not None:
+            f.append([lb, fmt(o[k])])
+    if o.get("rec") is not None:
+        f.append(["투자의견(1 매수~5 매도)", fmt(o["rec"])])
+    if nxt:
+        s = f"{nxt['date']} {nxt.get('time') or ''} ({nxt['confirm']})".replace("  ", " ")
+        if nxt.get("xstatus") == "mismatch":
+            s += " · 출처 간 불일치"
+        f.append(["다음 실적", s])
+        if nxt.get("consensus_eps") is not None:
+            f.append(["다음 실적 컨센서스 EPS", fmt(nxt["consensus_eps"])])
+    elif o.get("next_earnings") and str(o["next_earnings"]) >= ctx.inp["date"]:
+        f.append(["다음 실적", f"{o['next_earnings']} (예정)"])
+    if last and last.get("actual_eps") is not None:
+        s = f"{fmt(last['actual_eps'])}"
+        if last.get("consensus_eps") is not None:
+            s += f" vs 컨센서스 {fmt(last['consensus_eps'])}"
+        if last.get("surprise_pct") is not None:
+            s += f" ({_p(last['surprise_pct'])})"
+        f.append([f"직전 실적 EPS ({last['date']})", s])
+    if f:
+        tabs.append({"title": "컨센서스·밸류에이션·실적", "cols": ["항목", "값"], "rows": f})
+    return tabs
 
 
 # ---------- 종목 행 ----------
@@ -384,9 +467,12 @@ def ticker_row(ctx, t, mkt_score):
     if lev:
         ck.append(f"레버리지 {lev}배: 변동성 손실 위험")
     order = FACT_ORDER["daily" if ctx.daily else "weekly"]
-    facts = [f for _, f in sorted(zip(kinds, facts), key=lambda x: order.index(x[0]))]
+    pairs = sorted(zip(kinds, facts), key=lambda x: order.index(x[0]))
+    context = [f for _, f in pairs]
+    facts = [f for k, f in pairs if k in SUMMARY_KINDS]
     nw = news_for(ctx, t["ticker"])
-    return {"key": t["ticker"], "name": name, "score": score, "why": why, "facts": facts,
+    return {"key": t["ticker"], "name": name, "score": score, "why": why, "facts": facts, "context": context,
+            "table": ticker_table(ctx, t, o, u, nxt, last),
             "checkpoint": " · ".join(ck), "nums": list(dict.fromkeys(nums)), "news": nw,
             "auto_src": [n["id"] for n in nw[:2]], "_o": o, "_u": u}
 
@@ -437,17 +523,29 @@ def brief(inp, market, news, cal, events, cfg, now=None):
     return {"date": inp["date"], "mode": inp["mode"], "key_signals": ks, "rows": rows}
 
 
+def table_text(tabs):
+    out = []
+    for t in tabs or []:
+        out.append(f"  [{t['title']}] " + " | ".join(t["cols"]))
+        out += ["    " + " | ".join(str(c) for c in row) for row in t["rows"]]
+    return out
+
+
 def brief_text(dr):
     daily = dr["mode"] == "daily"
     out = [f"# {dr['date']} {dr['mode']} 작성 과제",
-           "각 행의 lead(판단 근거 1~2문장, 숫자·날짜 없이)만 쓴다. 사실 문장·체크포인트·인용은 코드가 채운다.",
+           "각 행의 lead(판단과 근거 서술)를 쓴다. 지표 표·체크포인트·출처 URL 은 코드가 채운다. lead 의 숫자는 그 행 표·뉴스에 있는 값만 쓴다.",
            "src 에는 그 행의 뉴스나 시장 뉴스(market 행) ID 를 쓴다. 전망은 규칙 점수로 정해져 있다. 뉴스 제목을 읽고 달리 볼 근거가 분명할 때만 adjust ±1 과 why 를 쓴다."]
     if dr["key_signals"]:
         out += ["## 핵심 신호"] + [f"- {x}" for x in dr["key_signals"]]
     for r in dr["rows"]:
         lv = r["outlook"] if daily else f"{r['s']}/{r['m']}/{r['l']}"
         out.append(f"## {r['key']} {r['name']} — 초안 {lv} (점수 {r['score']:+d}: {'; '.join(r['why']) or '신호 없음'})")
-        out.append("사실: " + " ".join(r["facts"]))
+        out += table_text(r.get("table"))
+        if r["facts"]:
+            out.append("요약에 코드가 붙이는 문장: " + " ".join(r["facts"]))
+        if r.get("checkpoint"):
+            out.append("체크포인트: " + r["checkpoint"])
         for n in r["news"]:
             h = f" [{n['hint']}후보]" if n.get("hint") and n["hint"] != "중립" else ""
             out.append(f"  {n['id']}{h} {(n.get('published') or '')[5:16].replace('T', ' ')} {n['title']}")
@@ -474,10 +572,9 @@ def merge(dr, notes, cfg):
             errs.append(f"{r['key']}: lead 가 비어 있음")
         if lead and not re.search(r"[.!?]$", lead):
             lead += "."
-        if B.sentences(lead) > 2:
-            errs.append(f"{r['key']}: lead 는 2문장 이하")
-        if B.numbers_in(lead) or any(B.dates_in(lead)):
-            errs.append(f"{r['key']}: lead 에 숫자·날짜를 쓰지 않는다 (코드가 사실 문장에 넣는다)")
+        mx = lim.get("lead_sentences_max")
+        if mx and B.sentences(lead) > mx:
+            errs.append(f"{r['key']}: lead {B.sentences(lead)}문장 (최대 {mx}문장, 권장 {lim.get('lead_sentences_hint', '')})")
         adj = n.get("adjust") or 0
         if adj not in (-1, 0, 1):
             errs.append(f"{r['key']}: adjust 는 -1, 0, 1 중 하나")
@@ -490,15 +587,10 @@ def merge(dr, notes, cfg):
         if bad:
             errs.append(f"{r['key']}: src {', '.join(bad)} 는 이 행·시장 뉴스나 보완 출처가 아님")
         src = list(dict.fromkeys(own + r["auto_src"]))[:lim["src_max"]]
-        facts = list(r["facts"])
-        room = lim["summary_sentences"] - B.sentences(lead)
-        while facts and (B.sentences(" ".join(facts)) > room or len(lead) + 1 + len(" ".join(facts)) > lim["summary_chars"]):
-            facts.pop()
-        summary = (lead + " " + " ".join(facts)).strip()
+        summary = (lead + " " + " ".join(r["facts"])).strip()
         ck = r["checkpoint"]
-        while len(ck) > lim["check_chars"] and " · " in ck:
-            ck = ck.rsplit(" · ", 1)[0]
-        row = {"key": r["key"], "summary": summary, "nums": r["nums"], "src": src}
+        row = {"key": r["key"], "summary": summary, "nums": r["nums"], "src": src,
+               "table": json.dumps(r.get("table") or [], ensure_ascii=False, separators=(",", ":"))}
         if daily:
             row["outlook"] = shift(r["outlook"], adj)
             row["checkpoint"] = ck

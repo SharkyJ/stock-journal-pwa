@@ -13,7 +13,7 @@
 |---|---|---|
 | `prepare.py` | 1단계 입력 | `begin`: 이전 기록 정리·입력 수집 보호 켜기. `input`: 훅 기록의 시트 읽기 응답 → `input.json` (보유 필터, 신호 기간, 최신 주간 전망, 재무추이 45일, 오늘 날짜) |
 | `collect.py` | 1단계 수집 묶음 | `input.json` → `market.json`, `news.json`, `calendar.json`, `events.json` (`--digest`로 전체 요약 출력) |
-| `draft.py` | 1·4단계 초안·합치기 | `brief`: 수집 결과 → `draft.json`(규칙 점수 전망, 사실 문장, 체크포인트, 인용 ID) + 작성 과제 출력. `merge`: `draft.json` + 세션의 `notes.json`(행별 lead) → `analysis.json` |
+| `draft.py` | 1·4단계 초안·합치기 | `brief`: 수집 결과 → `draft.json`(규칙 점수 전망, 지표 표, 서술형 사실, 체크포인트, 인용 ID) + 작성 과제 출력. `merge`: `draft.json` + 세션의 `notes.json`(행별 lead) → `analysis.json` |
 | `collect_market.py` | 시세 | `input.json` → `market.json` |
 | `collect_news.py` | 뉴스 | `input.json` → `news.json` (태그·호재/악재 후보 포함) |
 | `news_score.py` | 뉴스 선별 | 렉시콘 점수, 부정어 처리, 토픽·티커 태그, 종목 관련도 |

@@ -49,12 +49,12 @@
   "sheets": {
     "daily": {
       "name": "App_일간전망",
-      "header": ["작성일", "구분", "티커", "종목명", "오늘 전망", "요약", "체크포인트", "출처", "작성시각"],
+      "header": ["작성일", "구분", "티커", "종목명", "오늘 전망", "요약", "체크포인트", "출처", "작성시각", "지표"],
       "keep_days": 30
     },
     "weekly": {
       "name": "App_전망",
-      "header": ["작성일", "구분", "티커", "종목명", "단기", "중기", "장기", "요약", "근거·이벤트", "출처", "작성시각"],
+      "header": ["작성일", "구분", "티커", "종목명", "단기", "중기", "장기", "요약", "근거·이벤트", "출처", "작성시각", "지표"],
       "keep_days": 84
     },
     "events": {
@@ -63,8 +63,10 @@
     }
   },
   "limits": {
-    "daily": {"summary_chars": 1000, "summary_sentences": 8, "check_chars": 300, "src_max": 3},
-    "weekly": {"summary_chars": 420, "summary_sentences": 3, "check_chars": 300, "src_max": 3}
+    "daily": {"summary_chars": null, "summary_sentences": null, "check_chars": null, "src_max": 4,
+              "lead_sentences_max": 8, "lead_sentences_hint": "3~6"},
+    "weekly": {"summary_chars": null, "summary_sentences": null, "check_chars": null, "src_max": 4,
+               "lead_sentences_max": 8, "lead_sentences_hint": "3~6"}
   },
   "forbidden": ["매수하세요", "매도하세요", "사세요", "파세요", "매수 추천", "매도 추천", "강력 추천", "반드시 오", "반드시 내", "확실히 오", "확실히 내", "무조건"]
 }
