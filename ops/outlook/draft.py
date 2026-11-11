@@ -27,8 +27,8 @@ NEWS_PER_ROW = 4
 MARKET_ORDER = {"daily": ["us", "fut", "upcoming", "recent", "rf", "kospi", "tone"],
                 "weekly": ["us", "kospi", "recent", "tone", "upcoming", "rf", "fut"]}
 # 요약 문장 우선순위 (길이 한도를 넘으면 뒤에서부터 뺀다)
-FACT_ORDER = {"daily": ["price", "under", "next", "signal", "cons", "last", "range"],
-              "weekly": ["price", "cons", "next", "under", "signal", "last", "range"]}
+FACT_ORDER = {"daily": ["price", "under", "next", "signal", "cons", "last"],
+              "weekly": ["price", "cons", "next", "under", "signal", "last"]}
 
 
 def fmt(v):
@@ -66,6 +66,15 @@ def shift(lv, d):
 
 def ok(o):
     return bool(o) and o.get("status") in ("ok", "stale", "mismatch") and o.get("value") is not None
+
+
+def flat(o):
+    """등락률이 정확히 0 이면 시세가 아직 갱신되지 않았을 가능성이 크다."""
+    return bool(o) and o.get("chg_pct") is not None and abs(o["chg_pct"]) < 1e-9
+
+
+def chg(o):
+    return "변동 없음, 시세 미갱신 가능" if flat(o) else pct(o.get("chg_pct"))
 
 
 def tag(o):
@@ -225,10 +234,10 @@ def market_row(ctx):
     us = [o for o in us if ok(o)]
     if us:
         nums += [o["id"] for o in us]
-        add("us", "간밤 " + ", ".join(f"{lab(ctx, o)} {pct(o.get('chg_pct'))}{tag(o)}" for o in us) + "로 마감했다.")
+        add("us", "간밤 " + ", ".join(f"{lab(ctx, o)} {chg(o)}{tag(o)}" for o in us) + "로 마감했다.")
     if fut:
         nums += [o["id"] for o in fut]
-        add("fut", "미국 지수선물은 " + ", ".join(f"{lab(ctx, o)} {pct(o.get('chg_pct'))}" for o in fut)
+        add("fut", "미국 지수선물은 " + ", ".join(f"{lab(ctx, o)} {chg(o)}" for o in fut)
                      + f"({D.hm(fut[0].get('as_of'))} 기준)이다.")
     tnx, krw = ctx.m("^TNX"), ctx.m("KRW=X")
     rf = []
@@ -320,16 +329,14 @@ def ticker_row(ctx, t, mkt_score):
 
     if ok(o):
         nums.append(o["id"])
-        s = f"{name}{josa(name)} {fmt(o['value'])}({pct(o.get('chg_pct'))}){tag(o)}"
+        s = f"{name}{josa(name)} {fmt(o['value'])}({chg(o)}){tag(o)}"
         ma = [f"{n}일선 대비 {pct(o.get(f'vs_ma{n}_pct'))}" for n in (20, 60, 200) if o.get(f"vs_ma{n}_pct") is not None]
         add("price", s + ("로 " + ", ".join(ma) if ma else "") + "이다.")
-        if o.get("lo20") is not None and o.get("hi20") is not None:
-            add("range", f"20일 범위는 {fmt(o['lo20'])}~{fmt(o['hi20'])}이다.")
     if u and ok(u):
         nums.append(u["id"])
         ul = ulabel(ctx, u)
         add("under", f"기초자산 {ul}{josa(ul)} "
-                     f"{pct(u.get('chg_pct'))}{tag(u)}"
+                     f"{chg(u)}{tag(u)}"
                      + (f", 20일선 대비 {pct(u['vs_ma20_pct'])}" if u.get("vs_ma20_pct") is not None else "") + "이다.")
     cons = []
     if er is not None and (not ctx.daily or abs(er) >= ctx.cfg["consensus"]["daily_notable_pct"]):
@@ -365,7 +372,7 @@ def ticker_row(ctx, t, mkt_score):
                      f"{'상회' if last['surprise_pct'] >= 0 else '하회'}했다.")
     if sigs:
         d = sig_dir(sigs[0])
-        mv = base.get("vs_ma20_pct") if base.get("vs_ma20_pct") is not None else base.get("chg_pct")
+        mv = base.get("vs_ma20_pct") if base.get("vs_ma20_pct") is not None else (None if flat(base) else base.get("chg_pct"))
         if d and mv is not None:
             fit = "가격 흐름과 일치한다" if (d > 0) == (mv > 0) else "가격 흐름과 엇갈린다"
             add("signal", f"최근 앱 신호는 {fit}.")
@@ -434,7 +441,7 @@ def brief_text(dr):
     daily = dr["mode"] == "daily"
     out = [f"# {dr['date']} {dr['mode']} 작성 과제",
            "각 행의 lead(판단 근거 1~2문장, 숫자·날짜 없이)만 쓴다. 사실 문장·체크포인트·인용은 코드가 채운다.",
-           "전망은 규칙 점수로 정해져 있다. 뉴스 제목을 읽고 달리 볼 근거가 분명할 때만 adjust ±1 과 why 를 쓴다."]
+           "src 에는 그 행의 뉴스나 시장 뉴스(market 행) ID 를 쓴다. 전망은 규칙 점수로 정해져 있다. 뉴스 제목을 읽고 달리 볼 근거가 분명할 때만 adjust ±1 과 why 를 쓴다."]
     if dr["key_signals"]:
         out += ["## 핵심 신호"] + [f"- {x}" for x in dr["key_signals"]]
     for r in dr["rows"]:
@@ -459,6 +466,7 @@ def merge(dr, notes, cfg):
     for k in nr:
         if k not in keys:
             errs.append(f"notes: 없는 행 {k}")
+    market_news = {x["id"] for x in dr["rows"][0]["news"]} if dr["rows"] and dr["rows"][0]["key"] == "market" else set()
     for r in dr["rows"]:
         n = nr.get(r["key"]) or {}
         lead = str(n.get("lead") or "").strip()
@@ -477,9 +485,10 @@ def merge(dr, notes, cfg):
         if adj and not str(n.get("why") or "").strip():
             errs.append(f"{r['key']}: adjust 를 쓰면 why 가 필요")
         own = [i for i in (n.get("src") or []) if i]
-        bad = [i for i in own if i not in {x["id"] for x in r["news"]} and not re.fullmatch(r"W\d+", str(i))]
+        okids = {x["id"] for x in r["news"]} | market_news  # 시장 뉴스는 모든 행에서 인용할 수 있다
+        bad = [i for i in own if i not in okids and not re.fullmatch(r"W\d+", str(i))]
         if bad:
-            errs.append(f"{r['key']}: src {', '.join(bad)} 는 이 행의 뉴스·보완 출처가 아님")
+            errs.append(f"{r['key']}: src {', '.join(bad)} 는 이 행·시장 뉴스나 보완 출처가 아님")
         src = list(dict.fromkeys(own + r["auto_src"]))[:lim["src_max"]]
         facts = list(r["facts"])
         room = lim["summary_sentences"] - B.sentences(lead)
