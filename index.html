@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-uCAYHk/FGQ1N2bJCUUlH0weJkABlsY2SUz+SjrsG4tc=' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; connect-src https://sheets.googleapis.com https://www.googleapis.com https://oauth2.googleapis.com https://accounts.google.com/gsi/ https://*.workers.dev https://script.google.com https://script.googleusercontent.com; frame-src https://accounts.google.com/gsi/; img-src 'self' data:; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-D+qUk6vlnEn1dN1+Xn/pARVnbz/9LhWruI4fIJ6btG4=' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; connect-src https://sheets.googleapis.com https://www.googleapis.com https://oauth2.googleapis.com https://accounts.google.com/gsi/ https://*.workers.dev https://script.google.com https://script.googleusercontent.com; frame-src https://accounts.google.com/gsi/; img-src 'self' data:; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
 <meta name="robots" content="noindex,nofollow">
 <meta name="theme-color" content="#0b0f17">
@@ -238,14 +238,16 @@ code{background:var(--bg2);padding:1px 5px;border-radius:5px;font-size:12.5px}
 <script>
 'use strict';
 /* ================= 상수 / 유틸 ================= */
-const VERSION='1.12.0';
+const VERSION='1.13.0';
 const SH='https://sheets.googleapis.com/v4/spreadsheets';
 const SHEETS_SCOPE='https://www.googleapis.com/auth/spreadsheets';
 const SCOPES=SHEETS_SCOPE+' openid email';
-const APP={plan:'App_매매계획',review:'App_매매회고',snap:'App_자산추이',watch:'App_관심종목',outlook:'App_전망',daily:'App_일간전망',signal:'App_시그널',fin:'App_재무추이',inbox:'App_체결수신',event:'App_주요일정'};
+const APP={sellRule:'App_매도규칙',sellEvent:'App_매도이력',plan:'App_매매계획',review:'App_매매회고',snap:'App_자산추이',watch:'App_관심종목',outlook:'App_전망',daily:'App_일간전망',signal:'App_시그널',fin:'App_재무추이',inbox:'App_체결수신',event:'App_주요일정'};
 const APPK=Object.keys(APP);
 const CASH='현금투자';
 const HDR={
+  sellRule:['종목키','설정 JSON','수정시각'],
+  sellEvent:['이벤트키','종목키','평가 JSON','기록시각'],
   plan:['종목코드','시장','종목탭','목표가','손절가','목표비중(%)','투자근거','메모','수정일'],
   review:['거래키','시장','종목탭','거래일자','구분','수량','단가','전략태그','감정','회고','평점','작성일'],
   snap:['일자','투자원금(KRW)','총평가자산(KRW)','총손익(KRW)','수익률','국장 총평가(KRW)','미장 총평가(USD)','예수금(KRW환산)','환율(USD/KRW)','국장 원금(KRW)','미장 원금(USD)','기록시각'],
@@ -257,7 +259,7 @@ const HDR={
   inbox:['키','수신시각','증권사','계좌구분','유형','거래일자','티커','종목명','수량','단가','수수료·세금','원화금액','달러금액','환율','통화','상태','반영위치','원본요약'],
   fin:['키','일자','시장','티커','종목명','현재가','실적 PER','12개월 선행 PER','포워드 PER','실적 EPS','12개월 선행 EPS','올해 회계연도 말','올해 추정 EPS','내년 회계연도 말','내년 추정 EPS','목표주가','투자의견(5=강력매수)','출처','기록시각']
 };
-const HCOL={plan:'I',review:'L',snap:'L',watch:'E',outlook:'L',daily:'J',signal:'L',fin:'S',inbox:'R',event:'Q'};
+const HCOL={sellRule:'C',sellEvent:'D',plan:'I',review:'L',snap:'L',watch:'E',outlook:'L',daily:'J',signal:'L',fin:'S',inbox:'R',event:'Q'};
 const MKL={KR:'국장',US:'미장'};
 const MCCY={KR:'KRW',US:'USD'};
 const DEF_ACC={KR:['메리츠증권','메리츠 RIA','토스증권','토스 RIA'],US:['메리츠증권','토스증권']};
@@ -311,7 +313,7 @@ class AuthErr extends Error{constructor(m){super(m||'Google 로그인이 필요�
 
 /* ================= 상태 ================= */
 const S={cfg:Object.assign({},DEF,LS.get('sj.cfg',{})),token:null,tokenExp:0,email:'',D:null,locked:true,loading:false,err:'',needAuth:false,hiddenAt:0,lastAct:Date.now(),pin:'',pinMode:'unlock',pinFirst:'',pinMsg:'',busy:false,modal:null,
-  v:{tab:'home',stock:null,ccy:'KRW',hf:'all',al:'all',hs:'weight',cm:'all',cs:'recent',an:'mkt',as:'trend',per:'3M',tool:'avg',rbs:'KR',rbc:'1',mr:'KR',st:'KR',sm:'KR',fm:'KR',tk:'',cr:'3mo',sg:'sig',pz:'all',su:'all',ov:'ma',ok:'d',calK:'all',calH:'hold',calI:'0',calM:'',calD:''}};
+  v:{tab:'home',stock:null,ccy:'KRW',hf:'all',al:'all',hs:'weight',cm:'all',cs:'recent',an:'mkt',as:'trend',per:'3M',tool:'avg',rbs:'KR',rbc:'1',mr:'KR',st:'KR',sm:'KR',fm:'KR',tk:'',cr:'3mo',sg:'sell',pz:'all',su:'all',ov:'ma',ok:'d',calK:'all',calH:'hold',calI:'0',calM:'',calD:''}};
 const saveCfg=()=>LS.set('sj.cfg',S.cfg);
 const configured=()=>S.cfg.demo||(S.cfg.clientId&&S.cfg.mainId&&S.cfg.krId&&S.cfg.usId);
 const demoOpen=()=>!!S.cfg.demo;
@@ -494,6 +496,8 @@ function buildData(raw){
   D.acc={KR:D.cash.KR.acc.map(a=>a.name),US:D.cash.US.acc.map(a=>a.name)};
   ['KR','US'].forEach(m=>{if(!D.acc[m].length)D.acc[m]=DEF_ACC[m].slice()});
   D.flows=D.cash.flows;D.has.flow=!!D.cash.flowStart;
+  D.sellRules={};(raw.sellRule||[]).forEach(r=>{try{D.sellRules[str(r[0])]=JSON.parse(r[1])}catch{}});
+  D.sellEvents=(raw.sellEvent||[]).flatMap(r=>{try{return [{id:str(r[0]),key:str(r[1]),...JSON.parse(r[2])}]}catch{return []}});
   D.plans={};raw.plan.forEach((r,i)=>{const k=str(r[0]);if(k)D.plans[k]={row:i+2,key:k,target:num(r[3]),stop:num(r[4]),wt:num(r[5]),thesis:str(r[6]),memo:str(r[7]),updated:str(r[8])}});
   D.reviews={};raw.review.forEach((r,i)=>{const k=str(r[0]);if(k)D.reviews[k]={row:i+2,key:k,mkt:str(r[1]),tab:str(r[2]),date:toSerial(r[3]),type:str(r[4]),qty:num(r[5]),price:num(r[6]),tags:str(r[7]).split(',').map(s=>s.trim()).filter(Boolean),emo:str(r[8]),text:str(r[9]),rating:num(r[10]),at:str(r[11])}});
   D.snaps=raw.snap.map((r,i)=>({row:i+2,date:toSerial(r[0]),principal:num(r[1]),total:num(r[2]),pnl:num(r[3]),rr:num(r[4]),kr:num(r[5]),us:num(r[6]),cash:num(r[7]),fx:num(r[8]),krP:num(r[9]),usP:num(r[10]),ts:r[11]})).filter(s=>s.date&&s.total).sort((a,b)=>a.date-b.date);
@@ -1063,7 +1067,7 @@ const SG={d:{},q:[],run:0,fund:{},t:0};
 const sgE=(sym,r='2y')=>SG.d[sym+'|'+r];
 function sgX(sym,r='2y'){const e=sgE(sym,r);if(!e||!e.d||e.d.c.length<30)return null;if(!e.X)e.X=TA.compute(e.d,spP());return e.X}
 function sgQueue(key,job){if(SG.q.some(x=>x.key===key))return;SG.q.push({key,job});sgPump()}
-function sgPump(){while(SG.run<4&&SG.q.length){const {job}=SG.q.shift();SG.run++;job().finally(()=>{SG.run--;sgPump();sgRepaint();if(!SG.run&&!SG.q.length)sgLogScan()})}}
+function sgPump(){while(SG.run<4&&SG.q.length){const {job}=SG.q.shift();SG.run++;job().finally(()=>{SG.run--;sgPump();sgRepaint();if(!SG.run&&!SG.q.length){sgLogScan();sellScan()}})}}
 function sgNeed(list,r='2y',ttl){list.forEach(sym=>{if(!sym)return;const k=sym+'|'+r,e=SG.d[k]||(SG.d[k]={});
   if(e.busy||e.at&&Date.now()-e.at<(e.err?120e3:ttl||(e.d&&e.d.open?600e3:3600e3)))return;e.busy=1;
   sgQueue(k,()=>pxFetch(sym,r).then(d=>{e.d=d;e.err='';e.X=null},x=>{e.err=x.message}).finally(()=>{e.busy=0;e.at=Date.now()}))})}
@@ -1081,15 +1085,16 @@ function fundNeed(sym){if(!sym)return;const o=SG.fund[sym]||(SG.fund[sym]={});if
 const sgReady=()=>S.cfg.demo||chartUrlOk(S.cfg.chartUrl);
 // 화면에 필요한 시세를 요청 (render 직후·15초 간격)
 function sgAuto(){if(!S.D||S.locked||!sgReady())return;
+  sellAuto();
   if(S.D.has.fin&&S.cfg.finLog&&FL.day!==todayStr())finLogTick();
-  if(S.D.has.signal&&S.cfg.sigLog&&!SGL.busy&&Date.now()-SGL.at>10*60e3){const all=new Set();sgUniverse('all').forEach(x=>sgSyms(x).list.forEach(s=>all.add(s)));sgNeed([...all]);if(!SG.run&&!SG.q.length)sgLogScan()}
+  if(S.D.has.signal&&S.cfg.sigLog&&!SGL.busy&&Date.now()-SGL.at>10*60e3){const all=new Set();sgUniverse('all').forEach(x=>sgSyms(x).list.forEach(s=>all.add(s)));sgNeed([...all]);if(!SG.run&&!SG.q.length){sgLogScan();sellScan()}}
   const h=curStock();if(S.v.stock&&h){const s=sgSyms(h);sgNeed(s.list);if(s.sym)sgNeed([s.sym],'5yd');if(s.own&&!s.u)fundNeed(s.own);return}
   if(S.v.tab==='anal'){if(S.v.an==='mkt'){sgNeed(MKT_IDX.map(x=>x[0]));sgNeed(MKT_FUT.map(x=>x[0]),'1d',120e3)}return}
-  if(S.v.tab!=='strat')return;const sg=S.v.sg||'sig';
+  if(S.v.tab!=='strat')return;const sg=S.v.sg||'sell';
   if(sg==='sig'){const U=sgUniverse();const all=new Set();U.forEach(x=>sgSyms(x).list.forEach(s=>all.add(s)));sgNeed([...all]);U.forEach(x=>{const s=sgSyms(x);if(s.own&&!s.u)fundNeed(s.own)})}
   else if(sg==='log'){const ys=new Set();S.D.signals.slice(-150).forEach(o=>{const own=ySym({mkt:o.mkt,ticker:o.ticker});if(own)ys.add(own);if(o.sym)ys.add(o.sym)});sgNeed([...ys])}}
 function sgRepaint(){clearTimeout(SG.t);SG.t=setTimeout(()=>{if(S.locked||!S.D)return;const h=curStock();
-  if(S.v.stock&&h){const el=$('#sgc');if(el)el.innerHTML=stratCard(h);pxPaint(h);return}
+  if(S.v.stock&&h){const el=$('#sgc');if(el)el.innerHTML=stratCard(h);const se=$('#sell-detail');if(se)se.innerHTML='<h2>매도법</h2>'+sellCard(h)+'<button class="btn sm" data-act="sellOpen">매도법 탭</button>';pxPaint(h);return}
   if(S.v.tab==='strat'&&(S.v.sg||'sig')!=='tool'){const el=$('#sgv');if(el&&!el.contains(document.activeElement))el.innerHTML=vStratBody()}
   if(S.v.tab==='anal'&&S.v.an!=='rev'){const el=$('#anv');if(el&&!el.contains(document.activeElement))el.innerHTML=vAnalBody()}},150)}
 
@@ -1128,10 +1133,72 @@ function stLabel(e){if(!e||e.s==null)return ['na','데이터 부족'];if(e.blk)r
   if(e.s===-1)return ['sell','매도·경계'];if(e.near)return ['near','조건 근접'];return ['neu','중립']}
 const fmtPx=(v,h)=>h&&h.ccy?fmtMoney(v,h.ccy):fmtNum(v,2);
 
+
+/* ================= 매도법: 종목별 확정 일봉 평가 ================= */
+const SELL_NAMES={stop:'손실제한',profit:'2/3 수익보호',ma:'이동평균선',candle:'봉 패턴'};
+const SELL_STATE={hit:'조건 충족',near:'근접',clear:'조건 미충족',inactive:'비활성',missing:'데이터 부족',stale:'자료 지연',config:'설정 변경'};
+const SELL_RUN={busy:false,at:0,error:''};
+function sellEvaluate(h,r,X,open,now=Date.now()){
+  const result=(id,state,why,threshold=null,price=null,day=null)=>({id,state,why,threshold,price,day});
+  const enabled=Object.keys(SELL_NAMES).filter(k=>r[k]);
+  if(!X)return enabled.map(k=>result(k,'missing','시세를 불러오는 중이거나 시세가 없습니다'));
+  const i=X.L-1-(open?1:0),day=X.ser[i],price=X.c[i];
+  if(i<0||!Number.isFinite(price)||price<=0)return enabled.map(k=>result(k,'missing','확정된 가격이 없습니다'));
+  // 휴장일을 허용하되 오래된 자료는 신호로 확정하지 않는다.
+  if(now-X.t[i]*1000>7*864e5)return enabled.map(k=>result(k,'stale','마지막 일봉이 7일보다 오래됐습니다',null,price,day));
+  const B=h.avg,start=posStart(h),out=[];
+  const add=(id,state,why,t=null)=>out.push(result(id,state,why,t,price,day));
+  const level=t=>price<=t?'hit':(price-t)/t<=.02?'near':'clear';
+  if(!(B>0))return enabled.map(k=>result(k,'missing','유효한 평단이 없습니다'));
+  if(r.stop){const t=r.stopPrice>0?r.stopPrice:B*(1-r.stopPct/100);add('stop',level(t),'확정 종가와 손절 기준가 비교',t)}
+  if(r.profit){
+    if(start<X.ser[0])add('profit','missing','보유 시작 이후 고가 이력이 부족합니다');
+    else{let hi=B,n=0;for(let j=0;j<=i;j++)if(X.ser[j]>start){if(!(X.h[j]>0)){n=-Infinity;break}hi=Math.max(hi,X.h[j]);n++}
+      if(n<=0)add('profit','missing','매수 다음 거래일부터 고점을 추적합니다. 당일 매수 이전 고가는 제외합니다');
+      else if(hi/B-1<.05)add('profit','inactive','보유 후 최고 수익률 5%부터 활성화');
+      else{const t=B+(hi-B)*2/3;add('profit',level(t),`현재 평단 기준 · 보유 후 최고가 ${hi.toFixed(2)} · 수익폭의 1/3 반납`,t)}}}
+  if(r.ma){const a=X.c.slice(i-r.period+1,i+1),prev=X.c.slice(i-r.period,i);
+    if(prev.length!==r.period||i<r.period||a.some(v=>!(v>0))||prev.some(v=>!(v>0)))add('ma','missing',`${r.period+1}개 확정 종가 필요`);
+    else{const t=a.reduce((a,b)=>a+b,0)/r.period,p=prev.reduce((a,b)=>a+b,0)/r.period;
+      add('ma',price<t?'hit':(price-t)/t<=.02?'near':'clear',`${r.period}일선 ${price<t?(X.c[i-1]>=p?'신규 하향 돌파':'아래에서 마감'):'위에서 마감'}`,t)}}
+  if(r.candle){if(i<2||[i-2,i-1,i].some(j=>!(X.o[j]>0)))add('candle','missing','시가가 있는 확정 일봉 3개 필요');
+    else{const gap=(X.c[i-1]-X.o[i])/X.c[i-1],three=[i-2,i-1,i].every(j=>X.c[j]<X.o[j]);
+      const t=X.c[i-1]>X.o[i-1]?(X.o[i-1]+X.c[i-1])/2:null;
+      const penetration=t&&price<X.o[i]&&price<=t;
+      add('candle',gap>=.015||three||penetration?'hit':'clear',gap>=.015?'1.5% 이상 하락 갭':three?'3거래일 연속 음봉':penetration?'직전 양봉 몸통 50% 이하 음봉 마감':'봉 패턴 조건 미충족',t)}}
+  return out;
+}
+function sellResults(h){const r=S.D.sellRules[h.key];if(!r)return [];if(r.start!==posStart(h))return [{id:'stop',state:'inactive',why:'새 보유 회차입니다. 설정을 다시 저장하세요'}];
+  const e=sgE(ySym(h));return sellEvaluate(h,r,sgX(ySym(h)),!!(e&&e.d&&e.d.open))}
+function sellCard(h){const r=S.D.sellRules[h.key],rows=sellResults(h);
+  return `<div class="row sb"><b>${esc(h.name)}</b><button class="btn sm" data-act="sellForm" data-key="${esc(h.key)}">${r?'설정 수정':'설정'}</button></div>${rows.map(x=>`<div class="sm" style="margin-top:8px"><b>${SELL_NAMES[x.id]} · ${SELL_STATE[x.state]}</b>${x.threshold!=null?` · 기준 ${fmtMoney(x.threshold,h.ccy)}`:''}<div class="xs muted">${esc(x.why)}${x.price!=null?` · 종가 ${fmtMoney(x.price,h.ccy)} · ${sToStr(x.day)}`:''}</div></div>`).join('')||'<p class="sm muted">사용할 매도법을 선택하세요.</p>'}`}
+function vSell(){const D=S.D;if(!D.has.sellRule||!D.has.sellEvent)return `<section class="card"><h2>매도법</h2><p>종목별 설정과 이력을 위한 앱 전용 시트를 만드세요.</p><button class="btn pri" data-act="createSheets" data-busy>앱 시트 만들기</button></section>`;
+  const hs=D.hold.filter(h=>h.active),rank=h=>Math.max(0,...sellResults(h).map(x=>({hit:4,near:3,missing:2,stale:2}[x.state]||0)));
+  const events=D.sellEvents.slice().sort((a,b)=>b.at.localeCompare(a.at)).slice(0,100);
+  return `<section class="card"><h2>매도법</h2><p class="sm muted">앱 실행 중 확정 일봉으로 점검합니다. 평단 변경 시 재계산하며, 전량 청산 후 재매수하면 설정을 다시 저장하세요. 매수 당일 고가는 수익보호에서 제외합니다.</p><div class="xs muted">${SELL_RUN.busy?'이력 저장 중':SELL_RUN.error?esc(SELL_RUN.error):'조건 변화는 매도법 이력에 자동 저장'} · 장중 실시간 손절 감시가 아닙니다.</div></section>${!sgReady()?vSgConnect():''}${hs.sort((a,b)=>rank(b)-rank(a)).map(h=>`<section class="card">${sellCard(h)}</section>`).join('')||'<section class="card">보유 종목이 없습니다.</section>'}<section class="card"><h2>매도법 이력 <span class="xs">최근 100건</span></h2>${events.map(e=>`<div class="sm" style="margin:10px 0"><b>${esc(e.name)} · ${SELL_NAMES[e.id]||esc(e.id)} · ${SELL_STATE[e.state]||esc(e.state)}</b><div class="xs muted">${esc(e.at)} · ${esc(e.why)}${e.threshold!=null?` · 기준 ${esc(e.threshold)}`:''}</div></div>`).join('')||'<p class="muted sm">저장된 이력이 없습니다.</p>'}</section>`}
+function sellForm(key){const h=S.D.byKey[key];if(!h)return;const r=S.D.sellRules[key]||{stop:true,stopPct:5,period:20};
+  openModal(`<h3>${esc(h.name)} 매도법</h3>${Object.keys(SELL_NAMES).map(k=>`<label class="fld"><span>${SELL_NAMES[k]}</span><select name="${k}"><option value="0">사용 안 함</option><option value="1" ${r[k]?'selected':''}>사용</option></select></label>`).join('')}<label class="fld"><span>손절률 (%)</span><input name="stopPct" type="number" value="${r.stopPct||5}"></label><label class="fld"><span>고정 손절가 (입력 시 손절률보다 우선)</span><input name="stopPrice" type="number" value="${r.stopPrice||''}"></label><label class="fld"><span>이평선 기간</span><select name="period"><option value="20">20거래일</option><option value="60" ${r.period===60?'selected':''}>60거래일</option></select></label><div class="xs muted">수익보호는 현재 평단으로 계산합니다. 설정 변경은 새 버전으로 기록됩니다.</div><div id="sellErr" class="err"></div><button class="btn pri" data-act="sellSave" data-key="${esc(key)}" data-busy>저장</button>`)}
+function sellSave(key){const v=fv($('#modal .sheet')),h=S.D.byKey[key];if(!h)return;const r={start:posStart(h),version:Date.now(),stopPct:Number(v.stopPct),stopPrice:Number(v.stopPrice),period:Number(v.period)};
+  Object.keys(SELL_NAMES).forEach(k=>r[k]=v[k]==='1');
+  if(!Number.isFinite(r.stopPct)||r.stopPct<=0||r.stopPct>=100||!Number.isFinite(r.stopPrice)||r.stopPrice<0||![20,60].includes(r.period)){$('#sellErr').textContent='손절률은 0 초과 100 미만, 고정가는 0 이상이어야 합니다';return}
+  run(async()=>{await Store.upsert('sellRule',key,[key,JSON.stringify(r),nowStr()]);await Store.upsert('sellEvent',key+'|config|'+r.version,[key+'|config|'+r.version,key,JSON.stringify({id:'설정',state:'config',name:h.name,at:nowStr(),why:'규칙 설정 변경',config:r}),nowStr()]);closeModal()},'매도법을 저장했습니다')}
+function sellAuto(){const D=S.D;if(!D.has.sellRule)return;const hs=D.hold.filter(h=>h.active&&D.sellRules[h.key]);sgNeed(hs.map(ySym));if(!SG.run&&!SG.q.length)sellScan()}
+async function sellScan(){const D=S.D;if(!D||S.locked||!D.has.sellEvent||SELL_RUN.busy||Date.now()-SELL_RUN.at<30000)return;SELL_RUN.busy=true;SELL_RUN.at=Date.now();
+  try{for(const h of D.hold.filter(h=>h.active)){const r=D.sellRules[h.key];if(!r||r.start!==posStart(h))continue;
+    for(const x of sellResults(h)){if(['missing','stale'].includes(x.state))continue;
+      const scope=h.key+'|'+r.start+'|'+r.version+'|'+x.id;
+      const last=D.sellEvents.filter(e=>e.scope===scope).slice(-1)[0];if(last&&last.state===x.state)continue;
+      const id=scope+'|'+x.day+'|'+x.state,event={...x,scope,name:h.name,at:nowStr(),basis:h.avg};
+      if(D.sellEvents.some(e=>e.eventKey===id))continue;
+      await Store.upsert('sellEvent',id,[id,h.key,JSON.stringify({...event,eventKey:id}),nowStr()]);
+      D.sellEvents.push({...event,eventKey:id,key:h.key})}}
+    SELL_RUN.error='';
+  }catch(e){SELL_RUN.error='매도법 이력 저장 실패: '+e.message}finally{SELL_RUN.busy=false;sgRepaint()}}
+
 /* ================= 전략 탭 ================= */
-function vStrat(){const sg=S.v.sg||'sig';
-  return `<div style="margin-top:12px">${seg('sg',[['sig','신호'],['log','기록'],['tool','도구']],'full')}</div>${sg==='tool'?vTool():`<div id="sgv">${vStratBody()}</div>`}`}
-function vStratBody(){if((S.v.sg||'sig')==='log')return vLog();return sgReady()?vSig():vSgConnect()}
+function vStrat(){const sg=S.v.sg||'sell';
+  return `<div style="margin-top:12px">${seg('sg',[['sell','매도법'],['sig','신호'],['log','기록'],['tool','도구']],'full')}</div>${sg==='tool'?vTool():`<div id="sgv">${vStratBody()}</div>`}`}
+function vStratBody(){if((S.v.sg||'sell')==='sell')return vSell();if((S.v.sg||'sig')==='log')return vLog();return sgReady()?vSig():vSgConnect()}
 const vSgConnect=()=>`<section class="card"><h2>시세 서버 연결 필요</h2><div class="sm muted">신호·시장 분석은 주가 차트와 같은 Cloudflare Worker로 시세를 받습니다. 설정 → 기능 → 주가 차트 서버를 먼저 연결하세요.</div><button class="btn sm pri" style="margin-top:12px" data-act="chartUrlForm">연결</button></section>`;
 const SG_NOTE=`<p class="xs faint" style="margin:10px 2px 0">신호는 조건 충족 여부를 보여줄 뿐 매수·매도 권유가 아닙니다. 시세는 Yahoo Finance(국장 약 20분 지연), 재무·컨센서스는 네이버 증권·Yahoo 기준입니다.</p>`;
 function vSig(){const pz=S.v.pz||'all',U=sgUniverse(),items=U.map(sgItem),D=S.D;
@@ -1720,6 +1787,7 @@ function vStock(h){
    <div class="btns" style="margin-top:16px"><button class="btn buy" data-act="newTrade" data-key="${esc(h.key)}" data-type="매수">매수 기록</button><button class="btn sell" data-act="newTrade" data-key="${esc(h.key)}" data-type="매도" ${h.active?'':'disabled'}>매도 기록</button></div></section>
   <section class="card"><h2>매매 흐름 <span class="xs faint">● 매수 ● 매도 — 평단 · 현재가</span></h2>${tradeChart(h)}</section>
   ${vPlanCard(h,p)}
+  ${h.active?`<section class="card" id="sell-detail"><h2>매도법</h2>${sellCard(h)}<button class="btn sm" data-act="sellOpen">매도법 탭</button></section>`:''}
   <section class="card" id="sgc">${stratCard(h)}</section>
   <section class="card" style="padding-bottom:6px"><h2>거래 내역 <span class="xs faint">${h.trades.length}건 · 탭하여 수정/회고</span></h2>
    ${trades.length?trades.map(t=>tradeRow(h,t)).join(''):'<div class="empty">거래 기록이 없습니다</div>'}</section>
@@ -2203,6 +2271,9 @@ function setupEditForm(){
 
 /* ================= 액션 ================= */
 const A={
+  sellOpen(){S.v.stock=null;S.v.tab='strat';S.v.sg='sell';render()},
+  sellForm(el){sellForm(el.dataset.key)},
+  sellSave(el){sellSave(el.dataset.key)},
   barTip(el,e){const c=el.closest('.chart'),t=$('.tip',c),b=c.getBoundingClientRect();
     t.textContent=el.dataset.msg;t.style.display='block';
     const x=e.clientX-b.left,y=e.clientY-b.top,w=t.offsetWidth,h=t.offsetHeight;
@@ -2431,6 +2502,8 @@ const Demo=(()=>{
       {id:110,title:APP.daily,cells:[HDR.daily,...demoDaily()]},
       {id:111,title:APP.fin,cells:[HDR.fin,...demoFin()]},
       {id:112,title:APP.inbox,cells:[HDR.inbox,...demoInbox()]},
+      {id:114,title:APP.sellRule,cells:[HDR.sellRule]},
+      {id:115,title:APP.sellEvent,cells:[HDR.sellEvent]},
       {id:113,title:APP.event,cells:[HDR.event,...demoEvents()]}]}};
     sheet('main','현금투자').flows=openFlows();
     // 자산추이 시드

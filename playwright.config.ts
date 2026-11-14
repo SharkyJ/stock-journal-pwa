@@ -1,6 +1,6 @@
 import { defineConfig, devices } from '@playwright/test';
 
-const PORT = 8765;
+const PORT = 8874;
 const baseURL = `http://localhost:${PORT}`;
 
 /**
@@ -27,6 +27,6 @@ export default defineConfig({
   webServer: {
     command: `python3 -m http.server ${PORT}`,
     url: `${baseURL}/index.html`,
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: false,
   },
 });
